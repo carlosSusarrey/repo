@@ -18,6 +18,7 @@ card "Giant Growth" {
     type: Instant
     cost: {G}
     rules: "Target creature gets +3/+3 until end of turn."
+    effect: pump(target(creature), +3 / +3)
 }
 
 card "Healing Salve" {
@@ -34,23 +35,75 @@ card "Ancestral Recall" {
     effect: draw(3)
 }
 
-card "Dark Ritual" {
-    type: Instant
-    cost: {B}
-    rules: "Add {B}{B}{B}."
-}
-
-card "Shatter" {
-    type: Instant
-    cost: {1}{R}
-    rules: "Destroy target artifact."
-    effect: destroy(target(artifact))
-}
-
 card "Serra Angel" {
     type: Creature
     cost: {3}{W}{W}
     subtype: Angel
     p/t: 4 / 4
+    keywords: flying, vigilance
     rules: "Flying, vigilance"
+}
+
+card "Goblin Guide" {
+    type: Creature
+    cost: {R}
+    subtype: Goblin
+    p/t: 2 / 2
+    keywords: haste
+    rules: "Haste"
+}
+
+card "Vampire Nighthawk" {
+    type: Creature
+    cost: {1}{B}{B}
+    subtype: Vampire
+    p/t: 2 / 3
+    keywords: flying, deathtouch, lifelink
+    rules: "Flying, deathtouch, lifelink"
+}
+
+card "Charging Badger" {
+    type: Creature
+    cost: {G}
+    subtype: Badger
+    p/t: 1 / 1
+    keywords: trample
+    rules: "Trample"
+}
+
+card "Stoneforge Mystic" {
+    type: Creature
+    cost: {1}{W}
+    subtype: Human
+    p/t: 1 / 2
+    when(enters_battlefield): draw(1)
+    rules: "When enters the battlefield, draw a card."
+}
+
+card "Wall of Omens" {
+    type: Creature
+    cost: {1}{W}
+    subtype: Wall
+    p/t: 0 / 4
+    keywords: defender
+    when(enters_battlefield): draw(1)
+    rules: "Defender. When enters the battlefield, draw a card."
+}
+
+card "Baneslayer Angel" {
+    type: Creature
+    cost: {3}{W}{W}
+    subtype: Angel
+    p/t: 5 / 5
+    keywords: flying, first_strike, lifelink
+    rules: "Flying, first strike, lifelink"
+}
+
+card "Fleetfoot Panther" {
+    type: Creature
+    cost: {1}{G}{W}
+    subtype: Cat
+    p/t: 3 / 4
+    keywords: flash
+    rules: "Flash"
 }

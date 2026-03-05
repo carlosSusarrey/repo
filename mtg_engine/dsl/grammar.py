@@ -15,6 +15,8 @@ property: type_prop
         | loyalty_prop
         | rules_prop
         | effect_prop
+        | keywords_prop
+        | triggered_prop
 
 type_prop: "type:" CARD_TYPE
 cost_prop: "cost:" mana_cost
@@ -24,6 +26,10 @@ power_toughness_prop: "p/t:" NUMBER "/" NUMBER
 loyalty_prop: "loyalty:" NUMBER
 rules_prop: "rules:" QUOTED_STRING
 effect_prop: "effect:" effect
+keywords_prop: "keywords:" keyword_list
+triggered_prop: "when(" TRIGGER_EVENT "):" effect
+
+keyword_list: KEYWORD_NAME ("," KEYWORD_NAME)*
 
 mana_cost: MANA_SYMBOL+
 
@@ -35,6 +41,8 @@ effect: damage_effect
       | counter_effect
       | tap_effect
       | create_token_effect
+      | pump_effect
+      | add_keyword_effect
 
 damage_effect: "damage(" target "," NUMBER ")"
 destroy_effect: "destroy(" target ")"
@@ -44,6 +52,8 @@ lose_life_effect: "lose_life(" target "," NUMBER ")"
 counter_effect: "counter(" target ")"
 tap_effect: "tap(" target ")"
 create_token_effect: "create_token(" QUOTED_STRING "," NUMBER "/" NUMBER ")"
+pump_effect: "pump(" target "," SIGNED_NUMBER "/" SIGNED_NUMBER ")"
+add_keyword_effect: "add_keyword(" target "," KEYWORD_NAME ")"
 
 target: "target(" TARGET_TYPE ")"
       | "self"
@@ -59,6 +69,16 @@ SUPERTYPE: "Legendary" | "Basic" | "Snow"
 MANA_SYMBOL: "{" /[WUBRGC0-9]+/ "}"
 IDENTIFIER: /[a-zA-Z_][a-zA-Z0-9_ ]*/
 NUMBER: /[0-9]+/
+SIGNED_NUMBER: /[+-]?[0-9]+/
+KEYWORD_NAME: "flying" | "reach" | "first_strike" | "double_strike" | "deathtouch"
+            | "trample" | "lifelink" | "vigilance" | "haste" | "hexproof"
+            | "menace" | "defender" | "flash" | "indestructible" | "ward"
+            | "protection" | "prowess" | "cycling" | "kicker" | "flashback"
+            | "equip" | "fear" | "intimidate" | "shroud" | "shadow"
+            | "horsemanship" | "landwalk" | "flanking"
+TRIGGER_EVENT: "enters_battlefield" | "leaves_battlefield" | "dies" | "attacks"
+             | "blocks" | "deals_combat_damage_to_player" | "begin_upkeep"
+             | "end_step" | "land_enters" | "cast"
 
 %import common.WS
 %ignore WS

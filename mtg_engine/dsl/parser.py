@@ -6,6 +6,7 @@ from lark import Lark, Transformer, v_args
 
 from mtg_engine.core.card import Card
 from mtg_engine.core.enums import CardType, SuperType
+from mtg_engine.core.keywords import Keyword, KEYWORD_MAP
 from mtg_engine.core.mana import ManaCost
 from mtg_engine.dsl.grammar import CARD_GRAMMAR
 
@@ -55,11 +56,21 @@ class CardTransformer(Transformer):
             card.rules_text = props["rules_text"]
         if "effects" in props:
             card.effects = props["effects"]
+        if "keywords" in props:
+            card.keywords = props["keywords"]
+        if "triggered_abilities" in props:
+            card.triggered_abilities = props["triggered_abilities"]
 
         return card
 
     def card_body(self, items):
-        result = {"supertypes": [], "subtypes": [], "effects": []}
+        result = {
+            "supertypes": [],
+            "subtypes": [],
+            "effects": [],
+            "keywords": set(),
+            "triggered_abilities": [],
+        }
         for item in items:
             if isinstance(item, dict):
                 for key, value in item.items():
@@ -69,6 +80,10 @@ class CardTransformer(Transformer):
                         result["subtypes"].append(value)
                     elif key == "effect":
                         result["effects"].append(value)
+                    elif key == "keywords":
+                        result["keywords"].update(value)
+                    elif key == "triggered":
+                        result["triggered_abilities"].append(value)
                     else:
                         result[key] = value
         return result
@@ -99,6 +114,26 @@ class CardTransformer(Transformer):
 
     def effect_prop(self, items):
         return {"effect": items[0]}
+
+    def keywords_prop(self, items):
+        return {"keywords": items[0]}
+
+    def keyword_list(self, items):
+        keywords = set()
+        for item in items:
+            kw_name = str(item).strip()
+            if kw_name in KEYWORD_MAP:
+                keywords.add(KEYWORD_MAP[kw_name])
+        return keywords
+
+    def triggered_prop(self, items):
+        trigger_event = str(items[0]).strip()
+        effect = items[1]
+        return {"triggered": {
+            "trigger": trigger_event,
+            "source": "self",
+            "effects": [effect],
+        }}
 
     def mana_cost(self, items):
         cost_str = "".join(str(s) for s in items)
@@ -134,6 +169,22 @@ class CardTransformer(Transformer):
             "name": str(items[0]).strip('"'),
             "power": int(items[1]),
             "toughness": int(items[2]),
+        }
+
+    def pump_effect(self, items):
+        return {
+            "type": "pump",
+            "target": items[0],
+            "power": int(items[1]),
+            "toughness": int(items[2]),
+        }
+
+    def add_keyword_effect(self, items):
+        kw_name = str(items[1]).strip()
+        return {
+            "type": "add_keyword",
+            "target": items[0],
+            "keyword": kw_name,
         }
 
     def target(self, items):

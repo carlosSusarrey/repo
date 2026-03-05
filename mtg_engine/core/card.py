@@ -7,6 +7,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from mtg_engine.core.enums import CardType, Color, SuperType, Zone
+from mtg_engine.core.keywords import Keyword
 from mtg_engine.core.mana import ManaCost
 
 
@@ -24,6 +25,10 @@ class Card:
     loyalty: int | None = None
     rules_text: str = ""
     effects: list[dict[str, Any]] = field(default_factory=list)
+    keywords: set[Keyword] = field(default_factory=set)
+    triggered_abilities: list[dict[str, Any]] = field(default_factory=list)
+    activated_abilities: list[dict[str, Any]] = field(default_factory=list)
+    keyword_params: dict[Keyword, Any] = field(default_factory=dict)
 
     @property
     def colors(self) -> set[Color]:
@@ -44,6 +49,9 @@ class Card:
     @property
     def is_sorcery(self) -> bool:
         return self.card_type == CardType.SORCERY
+
+    def has_keyword(self, keyword: Keyword) -> bool:
+        return keyword in self.keywords
 
     def __str__(self) -> str:
         parts = [self.name, f"({self.cost})"]
@@ -67,10 +75,24 @@ class CardInstance:
     counters: dict[str, int] = field(default_factory=dict)
     attached_to: str | None = None
     attachments: list[str] = field(default_factory=list)
+    # Runtime keyword modifications (gained/lost this turn etc.)
+    granted_keywords: set[Keyword] = field(default_factory=set)
+    removed_keywords: set[Keyword] = field(default_factory=set)
+    # Temporary P/T modifications (until end of turn)
+    temp_power_mod: int = 0
+    temp_toughness_mod: int = 0
 
     @property
     def name(self) -> str:
         return self.card.name
+
+    @property
+    def keywords(self) -> set[Keyword]:
+        """Current keywords (base + granted - removed)."""
+        return (self.card.keywords | self.granted_keywords) - self.removed_keywords
+
+    def has_keyword(self, keyword: Keyword) -> bool:
+        return keyword in self.keywords
 
     @property
     def current_power(self) -> int | None:
@@ -80,6 +102,7 @@ class CardInstance:
         base = self.card.power
         base += self.counters.get("+1/+1", 0)
         base -= self.counters.get("-1/-1", 0)
+        base += self.temp_power_mod
         return base
 
     @property
@@ -90,6 +113,7 @@ class CardInstance:
         base = self.card.toughness
         base += self.counters.get("+1/+1", 0)
         base -= self.counters.get("-1/-1", 0)
+        base += self.temp_toughness_mod
         return base
 
     @property
@@ -99,11 +123,42 @@ class CardInstance:
             return False
         return self.damage_marked >= self.current_toughness
 
+    def can_attack(self) -> bool:
+        """Check if this creature can be declared as an attacker."""
+        if not self.card.is_creature:
+            return False
+        if self.zone != Zone.BATTLEFIELD:
+            return False
+        if self.tapped:
+            return False
+        if self.has_keyword(Keyword.DEFENDER):
+            return False
+        if self.summoning_sick and not self.has_keyword(Keyword.HASTE):
+            return False
+        return True
+
+    def can_block(self) -> bool:
+        """Check if this creature can be declared as a blocker."""
+        if not self.card.is_creature:
+            return False
+        if self.zone != Zone.BATTLEFIELD:
+            return False
+        if self.tapped:
+            return False
+        return True
+
     def tap(self) -> None:
         self.tapped = True
 
     def untap(self) -> None:
         self.tapped = False
+
+    def clear_end_of_turn(self) -> None:
+        """Clear temporary effects at end of turn."""
+        self.temp_power_mod = 0
+        self.temp_toughness_mod = 0
+        self.granted_keywords.clear()
+        self.removed_keywords.clear()
 
     def __str__(self) -> str:
         status = []
@@ -111,5 +166,8 @@ class CardInstance:
             status.append("tapped")
         if self.damage_marked > 0:
             status.append(f"{self.damage_marked} dmg")
+        kw_strs = [kw.name.lower() for kw in self.keywords]
+        if kw_strs:
+            status.append(", ".join(kw_strs))
         suffix = f" [{', '.join(status)}]" if status else ""
         return f"{self.card}{suffix}"

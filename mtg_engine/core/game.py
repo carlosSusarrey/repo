@@ -6,10 +6,18 @@ import random
 from typing import Any
 
 from mtg_engine.core.card import Card, CardInstance
+from mtg_engine.core.combat import (
+    CombatState, DamageAssignment, assign_combat_damage,
+    get_first_strike_damage, get_regular_damage,
+    has_first_strike_creatures, validate_attackers, validate_blockers,
+    validate_menace,
+)
 from mtg_engine.core.enums import CardType, Phase, Step, Zone
 from mtg_engine.core.game_state import GameState
+from mtg_engine.core.keywords import Keyword
 from mtg_engine.core.player import Player
 from mtg_engine.core.stack import Stack, StackItem
+from mtg_engine.core.triggers import TriggerEvent
 
 
 # Turn structure: (phase, step) pairs in order
@@ -65,11 +73,16 @@ class Game:
         library = self.state.get_zone(player_index, Zone.LIBRARY)
         random.shuffle(library)
 
+    def _card_lookup(self) -> dict[str, CardInstance]:
+        """Build a lookup dict of all cards by instance_id."""
+        return {c.instance_id: c for c in self.state.cards}
+
+    # ---- Drawing ----
+
     def draw_card(self, player_index: int) -> CardInstance | None:
         """Draw a card for a player."""
         library = self.state.get_zone(player_index, Zone.LIBRARY)
         if not library:
-            # Attempting to draw from empty library = lose
             self.state.players[player_index].lost = True
             self._log(f"{self.state.players[player_index].name} loses (empty library)")
             return None
@@ -84,6 +97,8 @@ class Game:
         for player_idx in range(len(self.state.players)):
             for _ in range(hand_size):
                 self.draw_card(player_idx)
+
+    # ---- Land & Spells ----
 
     def play_land(self, player_index: int, instance_id: str) -> bool:
         """Play a land from hand to battlefield."""
@@ -102,6 +117,19 @@ class Game:
         card.zone = Zone.BATTLEFIELD
         player.land_plays_remaining -= 1
         self._log(f"{player.name} plays {card.name}")
+
+        # Trigger landfall
+        self.state.triggers.check_triggers(
+            TriggerEvent.LAND_ENTERS,
+            {"card_id": card.instance_id, "card": card, "player_index": player_index},
+            self.state.get_battlefield(),
+        )
+        # ETB trigger
+        self.state.triggers.check_triggers(
+            TriggerEvent.ENTERS_BATTLEFIELD,
+            {"card_id": card.instance_id, "card": card, "player_index": player_index},
+            self.state.get_battlefield(),
+        )
         return True
 
     def cast_spell(self, player_index: int, instance_id: str,
@@ -114,6 +142,13 @@ class Game:
             return False
         if card.card.is_land:
             return False
+
+        # Flash check: non-instant during non-main phase requires flash
+        if not card.card.is_instant and not card.has_keyword(Keyword.FLASH):
+            if self.state.step != Step.MAIN:
+                return False
+            if not self.state.stack.is_empty:
+                return False
 
         # Check mana payment
         if not player.mana_pool.can_pay(card.card.cost):
@@ -133,6 +168,9 @@ class Game:
         )
         self.state.stack.push(stack_item)
         self._log(f"{player.name} casts {card.name}")
+
+        # Reset priority (action taken)
+        self.state.reset_priority()
         return True
 
     def resolve_top_of_stack(self) -> dict[str, Any] | None:
@@ -146,7 +184,6 @@ class Game:
 
         if card:
             if card.card.card_type in (CardType.INSTANT, CardType.SORCERY):
-                # Resolve effects then go to graveyard
                 for effect in item.effects:
                     resolved = self._resolve_effect(effect, item)
                     result["effects_resolved"].append(resolved)
@@ -156,9 +193,17 @@ class Game:
                 card.zone = Zone.BATTLEFIELD
                 if card.card.is_creature:
                     card.summoning_sick = True
+                # ETB trigger
+                self.state.triggers.check_triggers(
+                    TriggerEvent.ENTERS_BATTLEFIELD,
+                    {"card_id": card.instance_id, "card": card,
+                     "player_index": card.controller_index},
+                    self.state.get_battlefield(),
+                )
 
         self._log(f"{item.card_name} resolves")
         self.state.check_state_based_actions()
+        self.state.reset_priority()
         return result
 
     def _resolve_effect(self, effect: dict[str, Any], item: StackItem) -> dict[str, Any]:
@@ -168,6 +213,10 @@ class Game:
 
         if effect_type == "damage":
             amount = effect.get("amount", 0)
+            source_card = self.state.find_card(item.source_id)
+            has_lifelink = source_card and source_card.has_keyword(Keyword.LIFELINK)
+            has_deathtouch = source_card and source_card.has_keyword(Keyword.DEATHTOUCH)
+
             for target_id in item.targets:
                 # Try as player
                 for i, player in enumerate(self.state.players):
@@ -175,21 +224,40 @@ class Game:
                         player.deal_damage(amount)
                         result["success"] = True
                         self._log(f"{item.card_name} deals {amount} damage to {player.name}")
+                        if has_lifelink:
+                            self.state.players[item.controller_index].gain_life(amount)
+                            self._log(f"Lifelink: {self.state.players[item.controller_index].name} gains {amount} life")
 
                 # Try as creature
                 target_card = self.state.find_card(target_id)
                 if target_card and target_card.zone == Zone.BATTLEFIELD:
-                    target_card.damage_marked += amount
+                    if has_deathtouch and amount > 0:
+                        target_card.damage_marked = target_card.current_toughness or amount
+                    else:
+                        target_card.damage_marked += amount
                     result["success"] = True
                     self._log(f"{item.card_name} deals {amount} damage to {target_card.name}")
+                    if has_lifelink:
+                        self.state.players[item.controller_index].gain_life(amount)
 
         elif effect_type == "destroy":
             for target_id in item.targets:
                 target_card = self.state.find_card(target_id)
                 if target_card and target_card.zone == Zone.BATTLEFIELD:
-                    self.state.move_card(target_id, Zone.GRAVEYARD)
-                    result["success"] = True
-                    self._log(f"{item.card_name} destroys {target_card.name}")
+                    if not target_card.has_keyword(Keyword.INDESTRUCTIBLE):
+                        self.state.move_card(target_id, Zone.GRAVEYARD)
+                        result["success"] = True
+                        self._log(f"{item.card_name} destroys {target_card.name}")
+                        if target_card.card.is_creature:
+                            self.state.triggers.check_triggers(
+                                TriggerEvent.DIES,
+                                {"card_id": target_card.instance_id, "card": target_card,
+                                 "player_index": target_card.controller_index},
+                                self.state.get_battlefield(),
+                                self.state.get_zone(target_card.owner_index, Zone.GRAVEYARD),
+                            )
+                    else:
+                        self._log(f"{target_card.name} is indestructible")
 
         elif effect_type == "draw":
             amount = effect.get("amount", 1)
@@ -212,6 +280,130 @@ class Game:
 
         return result
 
+    # ---- Combat ----
+
+    def declare_attackers(self, attacker_ids: list[str]) -> list[str]:
+        """Declare attackers. Returns list of valid attacker IDs."""
+        self.state.combat.clear()
+        creatures = self.state.get_battlefield(self.state.active_player_index)
+        valid = validate_attackers(creatures, attacker_ids)
+
+        defending_player = self.state.non_active_player_index
+        for aid in valid:
+            self.state.combat.declare_attacker(aid, defending_player)
+            card = self.state.find_card(aid)
+            if card:
+                if not card.has_keyword(Keyword.VIGILANCE):
+                    card.tap()
+                self._log(f"{card.name} attacks")
+                self.state.triggers.check_triggers(
+                    TriggerEvent.ATTACKS,
+                    {"card_id": aid, "card": card,
+                     "player_index": card.controller_index},
+                    self.state.get_battlefield(),
+                )
+
+        self.state.reset_priority()
+        return valid
+
+    def declare_blockers(self, blocks: dict[str, str]) -> dict[str, str]:
+        """Declare blockers. blocks = {blocker_id: attacker_id}. Returns valid blocks."""
+        lookup = self._card_lookup()
+        attacker_map = {aid: lookup[aid] for aid in self.state.combat.attackers if aid in lookup}
+        blocker_candidates = {
+            c.instance_id: c
+            for c in self.state.get_battlefield(self.state.non_active_player_index)
+        }
+
+        valid = validate_blockers(attacker_map, blocker_candidates, blocks, self.state.combat)
+
+        for blocker_id, attacker_id in valid.items():
+            self.state.combat.declare_blocker(blocker_id, attacker_id)
+            blocker = lookup.get(blocker_id)
+            attacker = lookup.get(attacker_id)
+            if blocker and attacker:
+                self._log(f"{blocker.name} blocks {attacker.name}")
+
+        menace_violations = validate_menace(self.state.combat, attacker_map)
+        for aid in menace_violations:
+            self.state.combat.was_blocked.discard(aid)
+            self.state.combat.blocked_by[aid] = []
+            self._log(f"{attacker_map[aid].name} can't be blocked by fewer than 2 creatures (menace)")
+
+        self.state.reset_priority()
+        return valid
+
+    def resolve_combat_damage(self) -> list[str]:
+        """Resolve combat damage. Returns log of damage events."""
+        if not self.state.combat.has_attackers:
+            return []
+
+        damage_log = []
+        lookup = self._card_lookup()
+
+        has_fs = has_first_strike_creatures(self.state.combat, lookup)
+
+        if has_fs and not self.state.combat.first_strike_dealt:
+            assignments = get_first_strike_damage(self.state.combat, lookup)
+            damage_log.extend(self._apply_damage(assignments, lookup))
+            self.state.combat.first_strike_dealt = True
+            self.state.check_state_based_actions()
+            return damage_log
+
+        assignments = get_regular_damage(self.state.combat, lookup)
+        damage_log.extend(self._apply_damage(assignments, lookup))
+        self.state.check_state_based_actions()
+        return damage_log
+
+    def _apply_damage(
+        self, assignments: list[DamageAssignment], lookup: dict[str, CardInstance]
+    ) -> list[str]:
+        """Apply damage assignments and return log entries."""
+        log_entries = []
+
+        for dmg in assignments:
+            if dmg.target_id.startswith("player:"):
+                player_idx = int(dmg.target_id.split(":")[1])
+                player = self.state.players[player_idx]
+                player.deal_damage(dmg.amount)
+                source = lookup.get(dmg.source_id)
+                source_name = source.name if source else "Unknown"
+                log_entries.append(f"{source_name} deals {dmg.amount} combat damage to {player.name}")
+
+                if source:
+                    self.state.triggers.check_triggers(
+                        TriggerEvent.DEALS_COMBAT_DAMAGE_TO_PLAYER,
+                        {"card_id": source.instance_id, "card": source,
+                         "player_index": player_idx, "amount": dmg.amount},
+                        self.state.get_battlefield(),
+                    )
+            else:
+                target = lookup.get(dmg.target_id)
+                source = lookup.get(dmg.source_id)
+                if target and target.zone == Zone.BATTLEFIELD:
+                    if dmg.has_deathtouch and dmg.amount > 0:
+                        target.damage_marked = target.current_toughness or dmg.amount
+                    else:
+                        target.damage_marked += dmg.amount
+                    source_name = source.name if source else "Unknown"
+                    log_entries.append(
+                        f"{source_name} deals {dmg.amount} combat damage to {target.name}"
+                    )
+
+            if dmg.has_lifelink:
+                source = lookup.get(dmg.source_id)
+                if source:
+                    controller = self.state.players[source.controller_index]
+                    controller.gain_life(dmg.amount)
+                    log_entries.append(f"Lifelink: {controller.name} gains {dmg.amount} life")
+
+        for entry in log_entries:
+            self._log(entry)
+
+        return log_entries
+
+    # ---- Turn Structure ----
+
     def step_untap(self) -> None:
         """Untap step: untap all permanents of active player."""
         for card in self.state.get_battlefield(self.state.active_player_index):
@@ -221,18 +413,67 @@ class Game:
 
     def step_draw(self) -> None:
         """Draw step: active player draws a card."""
-        # Skip draw on first player's first turn
         if self.state.turn_number == 1 and self.state.active_player_index == 0:
             self._log("First player skips draw on turn 1")
             return
         self.draw_card(self.state.active_player_index)
 
+    def step_cleanup(self) -> None:
+        """Cleanup step: discard to hand size, clear damage, clear end-of-turn effects."""
+        player_idx = self.state.active_player_index
+        player = self.state.players[player_idx]
+
+        hand = self.state.get_zone(player_idx, Zone.HAND)
+        while len(hand) > 7:
+            card = hand.pop()
+            card.zone = Zone.GRAVEYARD
+            self._log(f"{player.name} discards {card.name}")
+
+        for card in self.state.get_battlefield():
+            card.damage_marked = 0
+            card.clear_end_of_turn()
+
+        self.state.combat.clear()
+
+        for p in self.state.players:
+            p.mana_pool.empty()
+
+    def advance_step(self) -> tuple[Phase, Step]:
+        """Advance to the next step/phase. Returns the new (phase, step)."""
+        current = (self.state.phase, self.state.step)
+        idx = TURN_STRUCTURE.index(current)
+
+        if idx + 1 >= len(TURN_STRUCTURE):
+            self.advance_turn()
+            self.state.phase, self.state.step = TURN_STRUCTURE[0]
+        else:
+            self.state.phase, self.state.step = TURN_STRUCTURE[idx + 1]
+
+        self.state.reset_priority()
+        return (self.state.phase, self.state.step)
+
     def advance_turn(self) -> None:
         """Move to the next turn."""
-        # Switch active player
+        self.step_cleanup()
         self.state.active_player_index = self.state.non_active_player_index
         self.state.priority_player_index = self.state.active_player_index
         self.state.turn_number += 1
         self.state.active_player.reset_for_turn()
-        self.state.active_player.mana_pool.empty()
         self._log(f"\n--- Turn {self.state.turn_number}: {self.state.active_player.name} ---")
+
+    def run_step(self) -> list[str]:
+        """Execute the current step's automatic actions and return log entries."""
+        step_log = []
+        step = self.state.step
+
+        if step == Step.UNTAP:
+            self.step_untap()
+        elif step == Step.DRAW:
+            self.step_draw()
+        elif step == Step.CLEANUP:
+            self.step_cleanup()
+
+        sba_log = self.state.check_state_based_actions()
+        step_log.extend(sba_log)
+
+        return step_log
