@@ -1,0 +1,56 @@
+// Sample MTG card definitions
+
+card "Lightning Bolt" {
+    type: Instant
+    cost: {R}
+    rules: "Deal 3 damage to any target."
+    effect: damage(target(any_target), 3)
+}
+
+card "Grizzly Bears" {
+    type: Creature
+    cost: {1}{G}
+    subtype: Bear
+    p/t: 2 / 2
+}
+
+card "Giant Growth" {
+    type: Instant
+    cost: {G}
+    rules: "Target creature gets +3/+3 until end of turn."
+}
+
+card "Healing Salve" {
+    type: Instant
+    cost: {W}
+    rules: "Gain 3 life."
+    effect: gain_life(3)
+}
+
+card "Ancestral Recall" {
+    type: Instant
+    cost: {U}
+    rules: "Draw 3 cards."
+    effect: draw(3)
+}
+
+card "Dark Ritual" {
+    type: Instant
+    cost: {B}
+    rules: "Add {B}{B}{B}."
+}
+
+card "Shatter" {
+    type: Instant
+    cost: {1}{R}
+    rules: "Destroy target artifact."
+    effect: destroy(target(artifact))
+}
+
+card "Serra Angel" {
+    type: Creature
+    cost: {3}{W}{W}
+    subtype: Angel
+    p/t: 4 / 4
+    rules: "Flying, vigilance"
+}

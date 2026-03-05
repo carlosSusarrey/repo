@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTG Rules Engine - Card Designer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header>
+        <h1>MTG Rules Engine</h1>
+        <p>Design and test custom Magic: The Gathering cards</p>
+    </header>
+
+    <main>
+        <section class="editor-panel">
+            <h2>Card DSL Editor</h2>
+            <textarea id="dsl-editor" placeholder='card "Lightning Bolt" {
+    type: Instant
+    cost: {R}
+    rules: "Deal 3 damage to any target."
+    effect: damage(target(any_target), 3)
+}'></textarea>
+            <div class="button-row">
+                <button id="btn-parse" onclick="parseCards()">Parse Cards</button>
+                <button id="btn-validate" onclick="validateCards()">Validate</button>
+            </div>
+            <div id="status" class="status"></div>
+        </section>
+
+        <section class="preview-panel">
+            <h2>Card Preview</h2>
+            <div id="card-preview">
+                <p class="placeholder">Enter card DSL and click Parse to preview.</p>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        async function parseCards() {
+            const dsl = document.getElementById('dsl-editor').value;
+            const status = document.getElementById('status');
+            const preview = document.getElementById('card-preview');
+
+            try {
+                const resp = await fetch('/api/parse', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({dsl})
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    status.textContent = `Parsed ${data.cards.length} card(s) successfully.`;
+                    status.className = 'status success';
+                    preview.innerHTML = data.cards.map(renderCard).join('');
+                } else {
+                    status.textContent = `Error: ${data.error}`;
+                    status.className = 'status error';
+                }
+            } catch (e) {
+                status.textContent = `Request failed: ${e.message}`;
+                status.className = 'status error';
+            }
+        }
+
+        async function validateCards() {
+            const dsl = document.getElementById('dsl-editor').value;
+            const status = document.getElementById('status');
+
+            try {
+                const resp = await fetch('/api/validate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({dsl})
+                });
+                const data = await resp.json();
+
+                if (data.valid) {
+                    status.textContent = `Valid! ${data.card_count} card(s) defined.`;
+                    status.className = 'status success';
+                } else {
+                    status.textContent = `Invalid: ${data.error}`;
+                    status.className = 'status error';
+                }
+            } catch (e) {
+                status.textContent = `Request failed: ${e.message}`;
+                status.className = 'status error';
+            }
+        }
+
+        function renderCard(card) {
+            let html = `<div class="card">`;
+            html += `<div class="card-header">`;
+            html += `<span class="card-name">${card.name}</span>`;
+            html += `<span class="card-cost">${card.cost}</span>`;
+            html += `</div>`;
+            html += `<div class="card-type">${card.type}`;
+            if (card.subtypes && card.subtypes.length) {
+                html += ` — ${card.subtypes.join(' ')}`;
+            }
+            html += `</div>`;
+            if (card.rules_text) {
+                html += `<div class="card-rules">${card.rules_text}</div>`;
+            }
+            if (card.effects && card.effects.length) {
+                html += `<div class="card-effects">`;
+                card.effects.forEach(e => {
+                    html += `<div class="effect">${JSON.stringify(e)}</div>`;
+                });
+                html += `</div>`;
+            }
+            if (card.power !== undefined) {
+                html += `<div class="card-pt">${card.power}/${card.toughness}</div>`;
+            }
+            html += `</div>`;
+            return html;
+        }
+    </script>
+</body>
+</html>
