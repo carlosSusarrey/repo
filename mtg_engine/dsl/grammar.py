@@ -17,6 +17,10 @@ property: type_prop
         | effect_prop
         | keywords_prop
         | triggered_prop
+        | activated_prop
+        | loyalty_ability_prop
+        | enchant_prop
+        | equip_prop
 
 type_prop: "type:" CARD_TYPE
 cost_prop: "cost:" mana_cost
@@ -28,6 +32,10 @@ rules_prop: "rules:" QUOTED_STRING
 effect_prop: "effect:" effect
 keywords_prop: "keywords:" keyword_list
 triggered_prop: "when(" TRIGGER_EVENT "):" effect
+activated_prop: "activate(" mana_cost "):" effect
+loyalty_ability_prop: "loyalty(" SIGNED_NUMBER "):" effect
+enchant_prop: "enchant:" ENCHANT_TYPE
+equip_prop: "equip:" mana_cost
 
 keyword_list: KEYWORD_NAME ("," KEYWORD_NAME)*
 
@@ -43,6 +51,7 @@ effect: damage_effect
       | create_token_effect
       | pump_effect
       | add_keyword_effect
+      | add_mana_effect
 
 damage_effect: "damage(" target "," NUMBER ")"
 destroy_effect: "destroy(" target ")"
@@ -54,13 +63,19 @@ tap_effect: "tap(" target ")"
 create_token_effect: "create_token(" QUOTED_STRING "," NUMBER "/" NUMBER ")"
 pump_effect: "pump(" target "," SIGNED_NUMBER "/" SIGNED_NUMBER ")"
 add_keyword_effect: "add_keyword(" target "," KEYWORD_NAME ")"
+add_mana_effect: "add_mana(" MANA_COLOR ")"
 
 target: "target(" TARGET_TYPE ")"
-      | "self"
-      | "each_opponent"
+      | SELF_TARGET
+      | EACH_OPPONENT_TARGET
       | "all(" TARGET_TYPE ")"
 
+SELF_TARGET: "self"
+EACH_OPPONENT_TARGET: "each_opponent"
+
 TARGET_TYPE: "creature" | "player" | "any_target" | "artifact" | "enchantment" | "permanent" | "spell"
+ENCHANT_TYPE: "creature" | "artifact" | "land" | "enchantment" | "permanent" | "player"
+MANA_COLOR: "W" | "U" | "B" | "R" | "G" | "C"
 
 CARD_NAME: "\"" /[^"]+/ "\""
 QUOTED_STRING: "\"" /[^"]+/ "\""

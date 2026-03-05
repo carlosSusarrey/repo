@@ -60,6 +60,10 @@ class CardTransformer(Transformer):
             card.keywords = props["keywords"]
         if "triggered_abilities" in props:
             card.triggered_abilities = props["triggered_abilities"]
+        if "activated_abilities" in props:
+            card.activated_abilities = props["activated_abilities"]
+        if "keyword_params" in props:
+            card.keyword_params = props["keyword_params"]
 
         return card
 
@@ -70,6 +74,8 @@ class CardTransformer(Transformer):
             "effects": [],
             "keywords": set(),
             "triggered_abilities": [],
+            "activated_abilities": [],
+            "keyword_params": {},
         }
         for item in items:
             if isinstance(item, dict):
@@ -84,6 +90,11 @@ class CardTransformer(Transformer):
                         result["keywords"].update(value)
                     elif key == "triggered":
                         result["triggered_abilities"].append(value)
+                    elif key == "activated":
+                        result["activated_abilities"].append(value)
+                    elif key == "keyword_param":
+                        kw, val = value
+                        result["keyword_params"][kw] = val
                     else:
                         result[key] = value
         return result
@@ -134,6 +145,31 @@ class CardTransformer(Transformer):
             "source": "self",
             "effects": [effect],
         }}
+
+    def activated_prop(self, items):
+        mana_cost = items[0]
+        effect = items[1]
+        return {"activated": {
+            "cost": {"mana": str(mana_cost), "tap": True},
+            "effects": [effect],
+        }}
+
+    def loyalty_ability_prop(self, items):
+        loyalty_cost = int(items[0])
+        effect = items[1]
+        return {"activated": {
+            "loyalty_cost": loyalty_cost,
+            "is_loyalty": True,
+            "effects": [effect],
+        }}
+
+    def enchant_prop(self, items):
+        enchant_type = str(items[0]).strip()
+        return {"effect": {"type": "enchant", "target_type": enchant_type}}
+
+    def equip_prop(self, items):
+        mana_cost = items[0]
+        return {"keyword_param": (Keyword.EQUIP, str(mana_cost))}
 
     def mana_cost(self, items):
         cost_str = "".join(str(s) for s in items)
@@ -187,16 +223,20 @@ class CardTransformer(Transformer):
             "keyword": kw_name,
         }
 
-    def target(self, items):
-        return {"kind": "target", "target_type": str(items[0])}
+    def add_mana_effect(self, items):
+        color = str(items[0]).strip()
+        return {
+            "type": "add_mana",
+            "color": color,
+        }
 
-    # Handle literal targets
-    def __default_token__(self, token):
+    def target(self, items):
+        token = str(items[0])
         if token == "self":
             return {"kind": "self"}
         if token == "each_opponent":
             return {"kind": "each_opponent"}
-        return token
+        return {"kind": "target", "target_type": token}
 
 
 _parser = Lark(CARD_GRAMMAR, parser="lalr")

@@ -7,7 +7,8 @@ from typing import Any
 
 from mtg_engine.core.card import CardInstance
 from mtg_engine.core.combat import CombatState
-from mtg_engine.core.enums import Phase, Step, Zone, SuperType
+from mtg_engine.core.continuous_effects import ContinuousEffectManager
+from mtg_engine.core.enums import Phase, Step, Zone, SuperType, CardType
 from mtg_engine.core.keywords import Keyword
 from mtg_engine.core.player import Player
 from mtg_engine.core.stack import Stack
@@ -23,6 +24,9 @@ class GameState:
     stack: Stack = field(default_factory=Stack)
     combat: CombatState = field(default_factory=CombatState)
     triggers: TriggerManager = field(default_factory=TriggerManager)
+    continuous_effects: ContinuousEffectManager = field(
+        default_factory=ContinuousEffectManager
+    )
     active_player_index: int = 0
     priority_player_index: int = 0
     phase: Phase = Phase.BEGINNING
@@ -32,6 +36,8 @@ class GameState:
     winner_index: int | None = None
     # Priority tracking
     players_passed: set[int] = field(default_factory=set)
+    # Planeswalker loyalty tracking (IDs that activated this turn)
+    loyalty_activated_this_turn: set[str] = field(default_factory=set)
 
     @property
     def active_player(self) -> Player:
@@ -90,10 +96,15 @@ class GameState:
         """Move a card to a different zone."""
         card = self.find_card(instance_id)
         if card:
+            old_zone = card.zone
             card.zone = to_zone
             if to_zone == Zone.BATTLEFIELD:
                 if card.card.is_creature:
                     card.summoning_sick = True
+                # Initialize planeswalker loyalty
+                if card.card.card_type == CardType.PLANESWALKER:
+                    from mtg_engine.core.planeswalker import initialize_loyalty
+                    initialize_loyalty(card)
             else:
                 # Reset battlefield state when leaving
                 card.tapped = False
@@ -103,7 +114,35 @@ class GameState:
                 card.removed_keywords.clear()
                 card.temp_power_mod = 0
                 card.temp_toughness_mod = 0
+                # Handle attachments leaving battlefield
+                if old_zone == Zone.BATTLEFIELD:
+                    self._handle_leaving_battlefield(card)
+                    # Remove continuous effects from this source
+                    self.continuous_effects.remove_effects_from(instance_id)
         return card
+
+    def _handle_leaving_battlefield(self, card: CardInstance) -> None:
+        """Handle a permanent leaving the battlefield."""
+        # Detach from anything it was attached to
+        if card.attached_to is not None:
+            target = self.find_card(card.attached_to)
+            if target and card.instance_id in target.attachments:
+                target.attachments.remove(card.instance_id)
+            card.attached_to = None
+
+        # Handle things attached to this card
+        for attachment_id in list(card.attachments):
+            attachment = self.find_card(attachment_id)
+            if attachment:
+                is_equipment = (
+                    attachment.card.card_type == CardType.ARTIFACT
+                    and "Equipment" in attachment.card.subtypes
+                )
+                if is_equipment:
+                    # Equipment stays on battlefield, just unattached
+                    attachment.attached_to = None
+                # Auras will be handled by SBA (no legal target)
+        card.attachments.clear()
 
     def check_state_based_actions(self) -> list[str]:
         """Check and apply state-based actions. Returns descriptions of actions taken."""
@@ -128,7 +167,6 @@ class GameState:
                         actions.append(f"{card.name} dies (lethal damage)")
 
         # CR 704.5i: Planeswalker with 0 loyalty goes to graveyard
-        from mtg_engine.core.enums import CardType
         for card in self.get_battlefield():
             if card.card.card_type == CardType.PLANESWALKER:
                 loyalty = card.counters.get("loyalty", card.card.loyalty or 0)

@@ -13,8 +13,11 @@ from mtg_engine.core.combat import (
     validate_menace,
 )
 from mtg_engine.core.enums import CardType, Phase, Step, Zone
+from mtg_engine.core.equipment import attach, can_enchant, can_equip
 from mtg_engine.core.game_state import GameState
 from mtg_engine.core.keywords import Keyword
+from mtg_engine.core.mana_abilities import can_tap_for_mana, tap_for_mana
+from mtg_engine.core.planeswalker import activate_loyalty, can_activate_loyalty
 from mtg_engine.core.player import Player
 from mtg_engine.core.stack import Stack, StackItem
 from mtg_engine.core.triggers import TriggerEvent
@@ -190,9 +193,10 @@ class Game:
                 card.zone = Zone.GRAVEYARD
             else:
                 # Permanents enter the battlefield
-                card.zone = Zone.BATTLEFIELD
-                if card.card.is_creature:
-                    card.summoning_sick = True
+                self.state.move_card(card.instance_id, Zone.BATTLEFIELD)
+                # Auras attach to their target on resolution
+                if "Aura" in card.card.subtypes and item.targets:
+                    self.attach_aura(card.instance_id, item.targets[0])
                 # ETB trigger
                 self.state.triggers.check_triggers(
                     TriggerEvent.ENTERS_BATTLEFIELD,
@@ -459,6 +463,8 @@ class Game:
         self.state.priority_player_index = self.state.active_player_index
         self.state.turn_number += 1
         self.state.active_player.reset_for_turn()
+        self.state.loyalty_activated_this_turn.clear()
+        self.state.continuous_effects.remove_end_of_turn_effects()
         self._log(f"\n--- Turn {self.state.turn_number}: {self.state.active_player.name} ---")
 
     def run_step(self) -> list[str]:
@@ -477,3 +483,112 @@ class Game:
         step_log.extend(sba_log)
 
         return step_log
+
+    # ---- Mana Abilities ----
+
+    def tap_land_for_mana(self, player_index: int, instance_id: str) -> bool:
+        """Tap a land or mana source for mana. Doesn't use the stack."""
+        card = self.state.find_card(instance_id)
+        if card is None or card.controller_index != player_index:
+            return False
+
+        player = self.state.players[player_index]
+        color = tap_for_mana(card, player.mana_pool)
+        if color is None:
+            return False
+
+        self._log(f"{player.name} taps {card.name} for {color.value}")
+        return True
+
+    # ---- Equipment / Auras ----
+
+    def equip(self, player_index: int, equipment_id: str, target_id: str) -> bool:
+        """Equip an equipment to a target creature.
+
+        CR 301.5: Equip is a sorcery-speed activated ability.
+        """
+        equipment = self.state.find_card(equipment_id)
+        target = self.state.find_card(target_id)
+        if equipment is None or target is None:
+            return False
+        if equipment.controller_index != player_index:
+            return False
+
+        if not can_equip(equipment, target):
+            return False
+
+        # Check sorcery timing
+        if self.state.step != Step.MAIN or not self.state.stack.is_empty:
+            return False
+
+        # Check equip cost
+        equip_cost = equipment.card.keyword_params.get(Keyword.EQUIP)
+        if equip_cost is not None:
+            player = self.state.players[player_index]
+            from mtg_engine.core.mana import ManaCost
+            cost = ManaCost.parse(equip_cost) if isinstance(equip_cost, str) else ManaCost()
+            if not player.mana_pool.can_pay(cost):
+                return False
+            player.mana_pool.pay(cost)
+
+        # Detach from old target if needed
+        if equipment.attached_to is not None:
+            old_target = self.state.find_card(equipment.attached_to)
+            if old_target and equipment.instance_id in old_target.attachments:
+                old_target.attachments.remove(equipment.instance_id)
+
+        attach(equipment, target)
+        self._log(f"{equipment.name} equipped to {target.name}")
+        self.state.reset_priority()
+        return True
+
+    def attach_aura(self, aura_id: str, target_id: str) -> bool:
+        """Attach an aura to a target permanent (called during resolution)."""
+        aura = self.state.find_card(aura_id)
+        target = self.state.find_card(target_id)
+        if aura is None or target is None:
+            return False
+
+        if not can_enchant(aura, target):
+            return False
+
+        attach(aura, target)
+        self._log(f"{aura.name} enchants {target.name}")
+        return True
+
+    # ---- Planeswalker Abilities ----
+
+    def activate_planeswalker(
+        self, player_index: int, planeswalker_id: str, ability_index: int,
+        targets: list[str] | None = None,
+    ) -> bool:
+        """Activate a loyalty ability on a planeswalker.
+
+        CR 306.5d: Sorcery speed, once per turn per planeswalker.
+        """
+        card = self.state.find_card(planeswalker_id)
+        if card is None or card.controller_index != player_index:
+            return False
+
+        # Sorcery timing
+        if self.state.step != Step.MAIN or not self.state.stack.is_empty:
+            return False
+
+        result = activate_loyalty(
+            card, ability_index, self.state.loyalty_activated_this_turn
+        )
+        if result is None:
+            return False
+
+        # Put ability on stack
+        stack_item = StackItem(
+            source_id=result["source_id"],
+            controller_index=result["controller_index"],
+            card_name=f"{result['card_name']} loyalty ability",
+            effects=result["effects"],
+            targets=targets or [],
+        )
+        self.state.stack.push(stack_item)
+        self._log(f"{card.name} activates loyalty ability {ability_index}")
+        self.state.reset_priority()
+        return True

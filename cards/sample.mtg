@@ -107,3 +107,107 @@ card "Fleetfoot Panther" {
     keywords: flash
     rules: "Flash"
 }
+
+// --- Phase 2: Equipment ---
+
+card "Bonesplitter" {
+    type: Artifact
+    cost: {1}
+    subtype: Equipment
+    effect: pump(self, +2 / +0)
+    equip: {1}
+    rules: "Equipped creature gets +2/+0. Equip {1}"
+}
+
+card "Loxodon Warhammer" {
+    type: Artifact
+    cost: {3}
+    subtype: Equipment
+    effect: pump(self, +3 / +0)
+    effect: add_keyword(self, trample)
+    effect: add_keyword(self, lifelink)
+    equip: {3}
+    rules: "Equipped creature gets +3/+0 and has trample and lifelink. Equip {3}"
+}
+
+// --- Phase 2: Auras ---
+
+card "Pacifism" {
+    type: Enchantment
+    cost: {1}{W}
+    subtype: Aura
+    enchant: creature
+    rules: "Enchanted creature can't attack or block."
+}
+
+card "Rancor" {
+    type: Enchantment
+    cost: {G}
+    subtype: Aura
+    enchant: creature
+    effect: pump(self, +2 / +0)
+    effect: add_keyword(self, trample)
+    rules: "Enchanted creature gets +2/+0 and has trample."
+}
+
+// --- Phase 2: Planeswalkers ---
+
+card "Chandra, Torch of Defiance" {
+    type: Planeswalker
+    cost: {2}{R}{R}
+    supertype: Legendary
+    subtype: Chandra
+    loyalty: 4
+    loyalty(+1): damage(each_opponent, 2)
+    loyalty(-3): damage(target(creature), 4)
+    loyalty(-7): draw(5)
+    rules: "+1: Deal 2 to each opponent. -3: Deal 4 to target creature. -7: Draw 5 cards."
+}
+
+// --- Phase 2: Basic Lands ---
+
+card "Plains" {
+    type: Land
+    supertype: Basic
+    subtype: Plains
+    rules: "Tap: Add W."
+}
+
+card "Island" {
+    type: Land
+    supertype: Basic
+    subtype: Island
+    rules: "Tap: Add U."
+}
+
+card "Swamp" {
+    type: Land
+    supertype: Basic
+    subtype: Swamp
+    rules: "Tap: Add B."
+}
+
+card "Mountain" {
+    type: Land
+    supertype: Basic
+    subtype: Mountain
+    rules: "Tap: Add R."
+}
+
+card "Forest" {
+    type: Land
+    supertype: Basic
+    subtype: Forest
+    rules: "Tap: Add G."
+}
+
+// --- Phase 2: Mana Dork ---
+
+card "Llanowar Elves" {
+    type: Creature
+    cost: {G}
+    subtype: Elf
+    p/t: 1 / 1
+    activate({0}): add_mana(G)
+    rules: "Tap: Add G."
+}
