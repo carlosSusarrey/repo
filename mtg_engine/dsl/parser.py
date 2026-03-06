@@ -20,6 +20,7 @@ CARD_TYPE_MAP = {
     "Planeswalker": CardType.PLANESWALKER,
     "Land": CardType.LAND,
     "Battle": CardType.BATTLE,
+    "Kindred": CardType.KINDRED,
 }
 
 SUPERTYPE_MAP = {
@@ -40,6 +41,10 @@ class CardTransformer(Transformer):
         props = items[1]  # card_body returns a dict
 
         card = Card(name=name, card_type=props.get("type", CardType.CREATURE))
+
+        if "card_types" in props:
+            card.card_types = props["card_types"]
+            card.card_type = card.card_types[0]
 
         if "cost" in props:
             card.cost = props["cost"]
@@ -122,7 +127,11 @@ class CardTransformer(Transformer):
         return items[0]
 
     def type_prop(self, items):
-        return {"type": CARD_TYPE_MAP[str(items[0])]}
+        if len(items) == 1:
+            return {"type": CARD_TYPE_MAP[str(items[0])]}
+        # Multi-type: type: Artifact Creature
+        types = [CARD_TYPE_MAP[str(t)] for t in items]
+        return {"type": types[0], "card_types": types}
 
     def cost_prop(self, items):
         return {"cost": items[0]}

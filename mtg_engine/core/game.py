@@ -282,7 +282,208 @@ class Game:
                         player.lose_life(amount)
                         result["success"] = True
 
+        elif effect_type == "counter":
+            # Counter target spell on the stack
+            for target_id in item.targets:
+                countered = self.state.stack.remove_by_source(target_id)
+                if countered:
+                    target_card = self.state.find_card(target_id)
+                    if target_card:
+                        target_card.zone = Zone.GRAVEYARD
+                    result["success"] = True
+                    self._log(f"{item.card_name} counters {countered.card_name}")
+
+        elif effect_type == "tap":
+            for target_id in item.targets:
+                target_card = self.state.find_card(target_id)
+                if target_card and target_card.zone == Zone.BATTLEFIELD:
+                    target_card.tap()
+                    result["success"] = True
+                    self._log(f"{item.card_name} taps {target_card.name}")
+
+        elif effect_type == "pump":
+            power_mod = effect.get("power", 0)
+            toughness_mod = effect.get("toughness", 0)
+            target_info = effect.get("target", {})
+            if target_info.get("kind") == "self":
+                source_card = self.state.find_card(item.source_id)
+                if source_card and source_card.zone == Zone.BATTLEFIELD:
+                    source_card.temp_power_mod += power_mod
+                    source_card.temp_toughness_mod += toughness_mod
+                    result["success"] = True
+            else:
+                for target_id in item.targets:
+                    target_card = self.state.find_card(target_id)
+                    if target_card and target_card.zone == Zone.BATTLEFIELD:
+                        target_card.temp_power_mod += power_mod
+                        target_card.temp_toughness_mod += toughness_mod
+                        result["success"] = True
+                        self._log(f"{target_card.name} gets +{power_mod}/+{toughness_mod}")
+
+        elif effect_type == "add_keyword":
+            keyword_name = effect.get("keyword", "")
+            from mtg_engine.core.keywords import KEYWORD_MAP
+            keyword = KEYWORD_MAP.get(keyword_name)
+            if keyword:
+                target_info = effect.get("target", {})
+                if target_info.get("kind") == "self":
+                    source_card = self.state.find_card(item.source_id)
+                    if source_card:
+                        source_card.granted_keywords.add(keyword)
+                        result["success"] = True
+                else:
+                    for target_id in item.targets:
+                        target_card = self.state.find_card(target_id)
+                        if target_card and target_card.zone == Zone.BATTLEFIELD:
+                            target_card.granted_keywords.add(keyword)
+                            result["success"] = True
+
+        elif effect_type == "add_mana":
+            color_str = effect.get("color", "")
+            player = self.state.players[item.controller_index]
+            color_map = {"W": "white", "U": "blue", "B": "black", "R": "red", "G": "green"}
+            attr = color_map.get(color_str)
+            if attr:
+                setattr(player.mana_pool, attr, getattr(player.mana_pool, attr) + 1)
+                result["success"] = True
+            elif color_str == "C":
+                player.mana_pool.colorless += 1
+                result["success"] = True
+
+        elif effect_type == "add_counter":
+            counter_type = effect.get("counter_type", "+1/+1")
+            amount = effect.get("amount", 1)
+            target_info = effect.get("target", {})
+            if target_info.get("kind") == "self":
+                source_card = self.state.find_card(item.source_id)
+                if source_card:
+                    source_card.counters[counter_type] = source_card.counters.get(counter_type, 0) + amount
+                    result["success"] = True
+            else:
+                for target_id in item.targets:
+                    target_card = self.state.find_card(target_id)
+                    if target_card and target_card.zone == Zone.BATTLEFIELD:
+                        target_card.counters[counter_type] = target_card.counters.get(counter_type, 0) + amount
+                        result["success"] = True
+
+        elif effect_type == "mill":
+            amount = effect.get("amount", 1)
+            player_index = item.controller_index
+            # Mill targets opponent by default, but if targets specified use those
+            if item.targets:
+                for target_id in item.targets:
+                    for i, player in enumerate(self.state.players):
+                        if player.name == target_id:
+                            player_index = i
+            library = self.state.get_zone(player_index, Zone.LIBRARY)
+            milled = min(amount, len(library))
+            for _ in range(milled):
+                if library:
+                    card = library[0]
+                    card.zone = Zone.GRAVEYARD
+            result["success"] = True
+            result["milled"] = milled
+
+        elif effect_type == "scry":
+            amount = effect.get("amount", 1)
+            # Scry just marks success; actual top/bottom decisions need player input
+            result["success"] = True
+            result["scry_amount"] = amount
+
+        elif effect_type == "exile":
+            for target_id in item.targets:
+                target_card = self.state.find_card(target_id)
+                if target_card and target_card.zone == Zone.BATTLEFIELD:
+                    self.state.move_card(target_id, Zone.EXILE)
+                    result["success"] = True
+                    self._log(f"{item.card_name} exiles {target_card.name}")
+
+        elif effect_type == "bounce":
+            for target_id in item.targets:
+                target_card = self.state.find_card(target_id)
+                if target_card and target_card.zone == Zone.BATTLEFIELD:
+                    self.state.move_card(target_id, Zone.HAND)
+                    result["success"] = True
+                    self._log(f"{item.card_name} returns {target_card.name} to hand")
+
+        elif effect_type == "sacrifice":
+            target_info = effect.get("target", {})
+            if target_info.get("kind") == "self":
+                source_card = self.state.find_card(item.source_id)
+                if source_card and source_card.zone == Zone.BATTLEFIELD:
+                    self.state.move_card(item.source_id, Zone.GRAVEYARD)
+                    result["success"] = True
+                    self._log(f"{source_card.name} is sacrificed")
+            else:
+                for target_id in item.targets:
+                    target_card = self.state.find_card(target_id)
+                    if target_card and target_card.zone == Zone.BATTLEFIELD:
+                        self.state.move_card(target_id, Zone.GRAVEYARD)
+                        result["success"] = True
+                        self._log(f"{target_card.name} is sacrificed")
+
+        elif effect_type == "create_token":
+            token_name = effect.get("name", "Token")
+            power = effect.get("power", 1)
+            toughness = effect.get("toughness", 1)
+            token = self.create_token(
+                item.controller_index, token_name, power, toughness
+            )
+            if token:
+                result["success"] = True
+                result["token_id"] = token.instance_id
+
+        elif effect_type == "x_damage":
+            # X damage uses X value from cost (stored in item or defaults to 0)
+            x_value = getattr(item, "x_value", 0)
+            for target_id in item.targets:
+                for i, player in enumerate(self.state.players):
+                    if player.name == target_id:
+                        player.deal_damage(x_value)
+                        result["success"] = True
+                target_card = self.state.find_card(target_id)
+                if target_card and target_card.zone == Zone.BATTLEFIELD:
+                    target_card.damage_marked += x_value
+                    result["success"] = True
+
         return result
+
+    # ---- Token Creation ----
+
+    def create_token(
+        self, controller_index: int, name: str, power: int, toughness: int,
+        card_type: CardType = CardType.CREATURE,
+        keywords: set | None = None,
+    ) -> CardInstance:
+        """Create a token on the battlefield."""
+        from mtg_engine.core.mana import ManaCost
+        token_card = Card(
+            name=name,
+            card_type=card_type,
+            cost=ManaCost(),
+            power=power,
+            toughness=toughness,
+            keywords=keywords or set(),
+        )
+        token_instance = CardInstance(
+            card=token_card,
+            zone=Zone.BATTLEFIELD,
+            owner_index=controller_index,
+            controller_index=controller_index,
+            summoning_sick=True,
+            is_token=True,
+        )
+        self.state.cards.append(token_instance)
+        self._log(f"Token {name} {power}/{toughness} created for {self.state.players[controller_index].name}")
+
+        # ETB trigger
+        self.state.triggers.check_triggers(
+            TriggerEvent.ENTERS_BATTLEFIELD,
+            {"card_id": token_instance.instance_id, "card": token_instance,
+             "player_index": controller_index},
+            self.state.get_battlefield(),
+        )
+        return token_instance
 
     # ---- Combat ----
 

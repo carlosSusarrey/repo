@@ -43,6 +43,13 @@ class Stack:
             return self._items[-1]
         return None
 
+    def remove_by_source(self, source_id: str) -> StackItem | None:
+        """Remove a stack item by its source ID (for countering spells)."""
+        for i, item in enumerate(self._items):
+            if item.source_id == source_id:
+                return self._items.pop(i)
+        return None
+
     @property
     def is_empty(self) -> bool:
         return len(self._items) == 0

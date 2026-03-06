@@ -218,6 +218,15 @@ class GameState:
                     self.move_card(card.instance_id, Zone.EXILE)
                     actions.append(f"{card.name} exiled (0 defense counters)")
 
+        # CR 704.5d: Tokens not on the battlefield cease to exist
+        tokens_to_remove = [
+            card for card in self.cards
+            if card.is_token and card.zone != Zone.BATTLEFIELD
+        ]
+        for token in tokens_to_remove:
+            self.cards.remove(token)
+            actions.append(f"{token.name} token ceases to exist")
+
         # CR 704.5p: Aura not attached to legal object goes to graveyard
         for card in self.get_battlefield():
             if "Aura" in card.card.subtypes and card.attached_to is not None:

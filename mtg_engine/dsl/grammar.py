@@ -39,7 +39,7 @@ property: type_prop
         | transform_prop
         | back_face_prop
 
-type_prop: "type:" CARD_TYPE
+type_prop: "type:" CARD_TYPE+
 cost_prop: "cost:" mana_cost
 supertype_prop: "supertype:" SUPERTYPE
 subtype_prop: "subtype:" IDENTIFIER
@@ -125,7 +125,7 @@ MANA_COLOR: "W" | "U" | "B" | "R" | "G" | "C"
 
 CARD_NAME: "\"" /[^"]+/ "\""
 QUOTED_STRING: "\"" /[^"]+/ "\""
-CARD_TYPE: "Creature" | "Instant" | "Sorcery" | "Enchantment" | "Artifact" | "Planeswalker" | "Land" | "Battle"
+CARD_TYPE: "Creature" | "Instant" | "Sorcery" | "Enchantment" | "Artifact" | "Planeswalker" | "Land" | "Battle" | "Kindred"
 SUPERTYPE: "Legendary" | "Basic" | "Snow"
 MANA_SYMBOL: "{" /[WUBRGCXSP0-9\/]+/ "}"
 IDENTIFIER: /[a-zA-Z_][a-zA-Z0-9_ ]*/
