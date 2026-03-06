@@ -1,0 +1,213 @@
+// Sample MTG card definitions
+
+card "Lightning Bolt" {
+    type: Instant
+    cost: {R}
+    rules: "Deal 3 damage to any target."
+    effect: damage(target(any_target), 3)
+}
+
+card "Grizzly Bears" {
+    type: Creature
+    cost: {1}{G}
+    subtype: Bear
+    p/t: 2 / 2
+}
+
+card "Giant Growth" {
+    type: Instant
+    cost: {G}
+    rules: "Target creature gets +3/+3 until end of turn."
+    effect: pump(target(creature), +3 / +3)
+}
+
+card "Healing Salve" {
+    type: Instant
+    cost: {W}
+    rules: "Gain 3 life."
+    effect: gain_life(3)
+}
+
+card "Ancestral Recall" {
+    type: Instant
+    cost: {U}
+    rules: "Draw 3 cards."
+    effect: draw(3)
+}
+
+card "Serra Angel" {
+    type: Creature
+    cost: {3}{W}{W}
+    subtype: Angel
+    p/t: 4 / 4
+    keywords: flying, vigilance
+    rules: "Flying, vigilance"
+}
+
+card "Goblin Guide" {
+    type: Creature
+    cost: {R}
+    subtype: Goblin
+    p/t: 2 / 2
+    keywords: haste
+    rules: "Haste"
+}
+
+card "Vampire Nighthawk" {
+    type: Creature
+    cost: {1}{B}{B}
+    subtype: Vampire
+    p/t: 2 / 3
+    keywords: flying, deathtouch, lifelink
+    rules: "Flying, deathtouch, lifelink"
+}
+
+card "Charging Badger" {
+    type: Creature
+    cost: {G}
+    subtype: Badger
+    p/t: 1 / 1
+    keywords: trample
+    rules: "Trample"
+}
+
+card "Stoneforge Mystic" {
+    type: Creature
+    cost: {1}{W}
+    subtype: Human
+    p/t: 1 / 2
+    when(enters_battlefield): draw(1)
+    rules: "When enters the battlefield, draw a card."
+}
+
+card "Wall of Omens" {
+    type: Creature
+    cost: {1}{W}
+    subtype: Wall
+    p/t: 0 / 4
+    keywords: defender
+    when(enters_battlefield): draw(1)
+    rules: "Defender. When enters the battlefield, draw a card."
+}
+
+card "Baneslayer Angel" {
+    type: Creature
+    cost: {3}{W}{W}
+    subtype: Angel
+    p/t: 5 / 5
+    keywords: flying, first_strike, lifelink
+    rules: "Flying, first strike, lifelink"
+}
+
+card "Fleetfoot Panther" {
+    type: Creature
+    cost: {1}{G}{W}
+    subtype: Cat
+    p/t: 3 / 4
+    keywords: flash
+    rules: "Flash"
+}
+
+// --- Phase 2: Equipment ---
+
+card "Bonesplitter" {
+    type: Artifact
+    cost: {1}
+    subtype: Equipment
+    effect: pump(self, +2 / +0)
+    equip: {1}
+    rules: "Equipped creature gets +2/+0. Equip {1}"
+}
+
+card "Loxodon Warhammer" {
+    type: Artifact
+    cost: {3}
+    subtype: Equipment
+    effect: pump(self, +3 / +0)
+    effect: add_keyword(self, trample)
+    effect: add_keyword(self, lifelink)
+    equip: {3}
+    rules: "Equipped creature gets +3/+0 and has trample and lifelink. Equip {3}"
+}
+
+// --- Phase 2: Auras ---
+
+card "Pacifism" {
+    type: Enchantment
+    cost: {1}{W}
+    subtype: Aura
+    enchant: creature
+    rules: "Enchanted creature can't attack or block."
+}
+
+card "Rancor" {
+    type: Enchantment
+    cost: {G}
+    subtype: Aura
+    enchant: creature
+    effect: pump(self, +2 / +0)
+    effect: add_keyword(self, trample)
+    rules: "Enchanted creature gets +2/+0 and has trample."
+}
+
+// --- Phase 2: Planeswalkers ---
+
+card "Chandra, Torch of Defiance" {
+    type: Planeswalker
+    cost: {2}{R}{R}
+    supertype: Legendary
+    subtype: Chandra
+    loyalty: 4
+    loyalty(+1): damage(each_opponent, 2)
+    loyalty(-3): damage(target(creature), 4)
+    loyalty(-7): draw(5)
+    rules: "+1: Deal 2 to each opponent. -3: Deal 4 to target creature. -7: Draw 5 cards."
+}
+
+// --- Phase 2: Basic Lands ---
+
+card "Plains" {
+    type: Land
+    supertype: Basic
+    subtype: Plains
+    rules: "Tap: Add W."
+}
+
+card "Island" {
+    type: Land
+    supertype: Basic
+    subtype: Island
+    rules: "Tap: Add U."
+}
+
+card "Swamp" {
+    type: Land
+    supertype: Basic
+    subtype: Swamp
+    rules: "Tap: Add B."
+}
+
+card "Mountain" {
+    type: Land
+    supertype: Basic
+    subtype: Mountain
+    rules: "Tap: Add R."
+}
+
+card "Forest" {
+    type: Land
+    supertype: Basic
+    subtype: Forest
+    rules: "Tap: Add G."
+}
+
+// --- Phase 2: Mana Dork ---
+
+card "Llanowar Elves" {
+    type: Creature
+    cost: {G}
+    subtype: Elf
+    p/t: 1 / 1
+    activate({0}): add_mana(G)
+    rules: "Tap: Add G."
+}
