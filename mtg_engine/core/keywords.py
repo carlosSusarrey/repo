@@ -37,6 +37,16 @@ class Keyword(Enum):
     FLASHBACK = auto()
     EQUIP = auto()
 
+    # --- Phase 3: Advanced mechanics ---
+    MORPH = auto()
+    DISGUISE = auto()
+    TRANSFORM = auto()
+    TOXIC = auto()
+    WITHER = auto()
+    INFECT = auto()
+    UNDYING = auto()
+    PERSIST = auto()
+
     # --- Historic/Retired ---
     FEAR = auto()
     INTIMIDATE = auto()
@@ -109,6 +119,14 @@ KEYWORD_MAP: dict[str, Keyword] = {
     "horsemanship": Keyword.HORSEMANSHIP,
     "landwalk": Keyword.LANDWALK,
     "flanking": Keyword.FLANKING,
+    "morph": Keyword.MORPH,
+    "disguise": Keyword.DISGUISE,
+    "transform": Keyword.TRANSFORM,
+    "toxic": Keyword.TOXIC,
+    "wither": Keyword.WITHER,
+    "infect": Keyword.INFECT,
+    "undying": Keyword.UNDYING,
+    "persist": Keyword.PERSIST,
 }
 
 

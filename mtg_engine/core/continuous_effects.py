@@ -64,9 +64,13 @@ class ContinuousEffect:
     # What this effect does (varies by layer)
     # Layer 2: control change
     new_controller: int | None = None
+    # Layer 3: text changes
+    text_replacements: dict[str, str] = field(default_factory=dict)
     # Layer 4: type changes
     add_types: list[CardType] = field(default_factory=list)
     remove_types: list[CardType] = field(default_factory=list)
+    add_subtypes: list[str] = field(default_factory=list)
+    remove_subtypes: list[str] = field(default_factory=list)
     # Layer 5: color changes
     add_colors: set[Color] = field(default_factory=set)
     remove_colors: set[Color] = field(default_factory=set)
@@ -173,6 +177,16 @@ class ContinuousEffectManager:
                     and c.zone == Zone.BATTLEFIELD
                     and c.controller_index != source.controller_index
                 ]
+        if effect.affect_filter == "all_permanents":
+            return [c for c in cards if c.zone == Zone.BATTLEFIELD]
+        if effect.affect_filter == "your_permanents":
+            source = card_lookup.get(effect.source_id)
+            if source:
+                return [
+                    c for c in cards
+                    if c.zone == Zone.BATTLEFIELD
+                    and c.controller_index == source.controller_index
+                ]
 
         return []
 
@@ -187,6 +201,43 @@ class ContinuousEffectManager:
                 case Layer.CONTROL:
                     if effect.new_controller is not None:
                         card.controller_index = effect.new_controller
+
+                case Layer.TEXT:
+                    # Text-changing effects modify rules text
+                    if effect.text_replacements:
+                        new_text = card.card.rules_text
+                        for old, new in effect.text_replacements.items():
+                            new_text = new_text.replace(old, new)
+                        card.card.rules_text = new_text
+
+                case Layer.TYPE:
+                    # Type-changing effects add/remove types and subtypes
+                    for t in effect.add_types:
+                        if t not in [card.card.card_type]:
+                            # For multi-type support, we'd need a list
+                            # For now, change the primary type
+                            card.card.card_type = t
+                    for st in effect.add_subtypes:
+                        if st not in card.card.subtypes:
+                            card.card.subtypes.append(st)
+                    for st in effect.remove_subtypes:
+                        if st in card.card.subtypes:
+                            card.card.subtypes.remove(st)
+
+                case Layer.COLOR:
+                    # Color-changing effects
+                    if effect.set_colors is not None:
+                        # Override all colors
+                        card._override_colors = set(effect.set_colors)  # type: ignore[attr-defined]
+                    else:
+                        override = getattr(card, '_override_colors', None)
+                        if override is None:
+                            override = set(card.card.colors)
+                        for c in effect.add_colors:
+                            override.add(c)
+                        for c in effect.remove_colors:
+                            override.discard(c)
+                        card._override_colors = override  # type: ignore[attr-defined]
 
                 case Layer.ABILITY:
                     for kw in effect.add_keywords:
@@ -283,5 +334,63 @@ def create_control_change_effect(
         layer=Layer.CONTROL,
         affected_ids=[target_id],
         new_controller=new_controller,
+        duration=duration,
+    )
+
+
+def create_type_change_effect(
+    source_id: str,
+    target_id: str,
+    add_types: list[CardType] | None = None,
+    remove_types: list[CardType] | None = None,
+    add_subtypes: list[str] | None = None,
+    remove_subtypes: list[str] | None = None,
+    duration: str = "permanent",
+) -> ContinuousEffect:
+    """Create a type-changing effect (e.g., turning an artifact into a creature)."""
+    return ContinuousEffect(
+        source_id=source_id,
+        layer=Layer.TYPE,
+        affected_ids=[target_id],
+        add_types=add_types or [],
+        remove_types=remove_types or [],
+        add_subtypes=add_subtypes or [],
+        remove_subtypes=remove_subtypes or [],
+        duration=duration,
+    )
+
+
+def create_color_change_effect(
+    source_id: str,
+    target_id: str,
+    set_colors: set[Color] | None = None,
+    add_colors: set[Color] | None = None,
+    remove_colors: set[Color] | None = None,
+    duration: str = "permanent",
+) -> ContinuousEffect:
+    """Create a color-changing effect (e.g., painting something blue)."""
+    return ContinuousEffect(
+        source_id=source_id,
+        layer=Layer.COLOR,
+        affected_ids=[target_id],
+        set_colors=set_colors,
+        add_colors=add_colors or set(),
+        remove_colors=remove_colors or set(),
+        duration=duration,
+    )
+
+
+def create_text_change_effect(
+    source_id: str,
+    target_id: str,
+    replacements: dict[str, str],
+    duration: str = "permanent",
+) -> ContinuousEffect:
+    """Create a text-changing effect (e.g., changing 'swamp' to 'island')."""
+    return ContinuousEffect(
+        source_id=source_id,
+        layer=Layer.TEXT,
+        affected_ids=[target_id],
+        text_replacements=replacements,
         duration=duration,
     )
