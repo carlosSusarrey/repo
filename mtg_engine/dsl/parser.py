@@ -95,6 +95,24 @@ class CardTransformer(Transformer):
                     elif key == "keyword_param":
                         kw, val = value
                         result["keyword_params"][kw] = val
+                    elif key == "chapter":
+                        if "chapters" not in result:
+                            result["chapters"] = []
+                        result["chapters"].append(value)
+                    elif key == "level":
+                        if "levels" not in result:
+                            result["levels"] = []
+                        result["levels"].append(value)
+                    elif key == "adventure":
+                        result["adventure"] = value
+                    elif key == "morph_cost":
+                        result["morph_cost"] = value
+                    elif key == "disguise_cost":
+                        result["disguise_cost"] = value
+                    elif key == "transform_condition":
+                        result["transform_condition"] = value
+                    elif key == "back_face":
+                        result["back_face"] = value
                     else:
                         result[key] = value
         return result
@@ -143,7 +161,7 @@ class CardTransformer(Transformer):
         return {"triggered": {
             "trigger": trigger_event,
             "source": "self",
-            "effects": [effect],
+            "effects": [effect] if not isinstance(effect, list) else effect,
         }}
 
     def activated_prop(self, items):
@@ -151,7 +169,7 @@ class CardTransformer(Transformer):
         effect = items[1]
         return {"activated": {
             "cost": {"mana": str(mana_cost), "tap": True},
-            "effects": [effect],
+            "effects": [effect] if not isinstance(effect, list) else effect,
         }}
 
     def loyalty_ability_prop(self, items):
@@ -160,7 +178,7 @@ class CardTransformer(Transformer):
         return {"activated": {
             "loyalty_cost": loyalty_cost,
             "is_loyalty": True,
-            "effects": [effect],
+            "effects": [effect] if not isinstance(effect, list) else effect,
         }}
 
     def enchant_prop(self, items):
@@ -171,11 +189,75 @@ class CardTransformer(Transformer):
         mana_cost = items[0]
         return {"keyword_param": (Keyword.EQUIP, str(mana_cost))}
 
+    # --- Phase 3 grammar handlers ---
+
+    def chapter_prop(self, items):
+        chapter_num = int(items[0])
+        effect = items[1]
+        return {"chapter": {
+            "chapter": chapter_num,
+            "effects": [effect] if not isinstance(effect, list) else effect,
+        }}
+
+    def level_prop(self, items):
+        level_num = int(items[0])
+        cost = items[1]
+        effect = items[2]
+        return {"level": {
+            "level": level_num,
+            "cost": str(cost),
+            "effects": [effect] if not isinstance(effect, list) else effect,
+        }}
+
+    def adventure_prop(self, items):
+        name = str(items[0]).strip('"')
+        props = items[1]
+        return {"adventure": {
+            "name": name,
+            "type": props.get("type", CardType.INSTANT),
+            "cost": props.get("cost", ManaCost()),
+            "effects": props.get("effects", []),
+            "rules_text": props.get("rules_text", ""),
+        }}
+
+    def adventure_body(self, items):
+        result = {"effects": []}
+        for item in items:
+            if isinstance(item, dict):
+                for key, value in item.items():
+                    if key == "effect":
+                        result["effects"].append(value)
+                    else:
+                        result[key] = value
+        return result
+
+    def adventure_property(self, items):
+        return items[0]
+
+    def morph_prop(self, items):
+        return {"morph_cost": items[0]}
+
+    def disguise_prop(self, items):
+        return {"disguise_cost": items[0]}
+
+    def transform_prop(self, items):
+        condition = str(items[0]).strip('"')
+        return {"transform_condition": condition}
+
+    def back_face_prop(self, items):
+        return {"back_face": items[0]}
+
     def mana_cost(self, items):
         cost_str = "".join(str(s) for s in items)
         return ManaCost.parse(cost_str)
 
     def effect(self, items):
+        if len(items) == 1:
+            return items[0]
+        # Multi-effect chain (effect; effect; ...)
+        return list(items)
+
+    def effect_single(self, items):
         return items[0]
 
     def damage_effect(self, items):
@@ -229,6 +311,32 @@ class CardTransformer(Transformer):
             "type": "add_mana",
             "color": color,
         }
+
+    def add_counter_effect(self, items):
+        return {
+            "type": "add_counter",
+            "target": items[0],
+            "counter_type": str(items[1]).strip('"'),
+            "amount": int(items[2]),
+        }
+
+    def mill_effect(self, items):
+        return {"type": "mill", "amount": int(items[0])}
+
+    def scry_effect(self, items):
+        return {"type": "scry", "amount": int(items[0])}
+
+    def exile_effect(self, items):
+        return {"type": "exile", "target": items[0]}
+
+    def bounce_effect(self, items):
+        return {"type": "bounce", "target": items[0]}
+
+    def sacrifice_effect(self, items):
+        return {"type": "sacrifice", "target": items[0]}
+
+    def x_damage_effect(self, items):
+        return {"type": "x_damage", "target": items[0]}
 
     def target(self, items):
         token = str(items[0])
