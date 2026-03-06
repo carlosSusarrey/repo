@@ -160,55 +160,87 @@ class Game:
         # Pay the cost
         player.mana_pool.pay(card.card.cost)
 
+        # Build effects list for the stack item
+        effects = list(card.card.effects)
+        # Permanents need an enter_battlefield effect so the unified resolver
+        # moves them to the battlefield (instead of special-casing in resolve)
+        if card.card.card_type not in (CardType.INSTANT, CardType.SORCERY):
+            effects.insert(0, {"type": "enter_battlefield"})
+
         # Put on stack
         card.zone = Zone.STACK
         stack_item = StackItem(
             source_id=card.instance_id,
             controller_index=player_index,
             card_name=card.name,
-            effects=card.card.effects,
+            effects=effects,
             targets=targets or [],
         )
         self.state.stack.push(stack_item)
         self._log(f"{player.name} casts {card.name}")
+
+        # Fire on-cast triggers (cascade, storm, etc.)
+        self.state.triggers.check_triggers(
+            TriggerEvent.CAST,
+            {"card_id": card.instance_id, "card": card,
+             "player_index": player_index},
+            self.state.get_battlefield(),
+        )
 
         # Reset priority (action taken)
         self.state.reset_priority()
         return True
 
     def resolve_top_of_stack(self) -> dict[str, Any] | None:
-        """Resolve the top item on the stack."""
+        """Resolve the top item on the stack.
+
+        All stack items resolve uniformly: iterate effects and resolve each one.
+        The stack does not differentiate between spells and abilities.
+        After effects resolve, instant/sorcery source cards go to graveyard.
+        """
         item = self.state.stack.pop()
         if item is None:
             return None
 
-        card = self.state.find_card(item.source_id)
         result = {"card_name": item.card_name, "effects_resolved": []}
 
-        if card:
-            if card.card.card_type in (CardType.INSTANT, CardType.SORCERY):
-                for effect in item.effects:
-                    resolved = self._resolve_effect(effect, item)
-                    result["effects_resolved"].append(resolved)
-                card.zone = Zone.GRAVEYARD
-            else:
-                # Permanents enter the battlefield
-                self.state.move_card(card.instance_id, Zone.BATTLEFIELD)
-                # Auras attach to their target on resolution
-                if "Aura" in card.card.subtypes and item.targets:
-                    self.attach_aura(card.instance_id, item.targets[0])
-                # ETB trigger
-                self.state.triggers.check_triggers(
-                    TriggerEvent.ENTERS_BATTLEFIELD,
-                    {"card_id": card.instance_id, "card": card,
-                     "player_index": card.controller_index},
-                    self.state.get_battlefield(),
-                )
+        # Resolve all effects on the stack item
+        for effect in item.effects:
+            resolved = self._resolve_effect(effect, item)
+            result["effects_resolved"].append(resolved)
+
+        # After resolution, instant/sorcery sources go to graveyard
+        card = self.state.find_card(item.source_id)
+        if card and card.card.card_type in (CardType.INSTANT, CardType.SORCERY):
+            card.zone = Zone.GRAVEYARD
 
         self._log(f"{item.card_name} resolves")
         self.state.check_state_based_actions()
         self.state.reset_priority()
         return result
+
+    def put_triggers_on_stack(self) -> int:
+        """Move all pending triggered abilities onto the stack.
+
+        Each pending trigger becomes a StackItem with the trigger's effects.
+        Returns the number of triggers placed on the stack.
+        """
+        count = 0
+        while self.state.triggers.has_pending:
+            pending = self.state.triggers.pop_pending()
+            if pending is None:
+                break
+            source_card = self.state.find_card(pending.source_card_id)
+            trigger_name = f"{source_card.name} trigger" if source_card else "Triggered ability"
+            item = StackItem(
+                source_id=pending.source_card_id,
+                controller_index=pending.controller_index,
+                card_name=trigger_name,
+                effects=pending.ability.effects,
+            )
+            self.state.stack.push(item)
+            count += 1
+        return count
 
     def _resolve_effect(self, effect: dict[str, Any], item: StackItem) -> dict[str, Any]:
         """Resolve a single effect from a spell or ability."""
@@ -432,6 +464,22 @@ class Game:
             if token:
                 result["success"] = True
                 result["token_id"] = token.instance_id
+
+        elif effect_type == "enter_battlefield":
+            source_card = self.state.find_card(item.source_id)
+            if source_card:
+                self.state.move_card(source_card.instance_id, Zone.BATTLEFIELD)
+                # Auras attach to their target on resolution
+                if "Aura" in source_card.card.subtypes and item.targets:
+                    self.attach_aura(source_card.instance_id, item.targets[0])
+                # ETB trigger
+                self.state.triggers.check_triggers(
+                    TriggerEvent.ENTERS_BATTLEFIELD,
+                    {"card_id": source_card.instance_id, "card": source_card,
+                     "player_index": source_card.controller_index},
+                    self.state.get_battlefield(),
+                )
+                result["success"] = True
 
         elif effect_type == "x_damage":
             # X damage uses X value from cost (stored in item or defaults to 0)

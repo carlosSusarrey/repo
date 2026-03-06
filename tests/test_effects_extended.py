@@ -330,3 +330,173 @@ class TestStackRemoveBySource:
         stack = Stack()
         removed = stack.remove_by_source("missing")
         assert removed is None
+
+
+class TestUnifiedStackResolution:
+    """Verify that all stack items resolve uniformly through effects."""
+
+    def _make_game_with_mana(self):
+        game = _setup_game()
+        game.state.step = Step.MAIN
+        game.state.players[0].mana_pool.add(Color.RED, 5)
+        game.state.players[0].mana_pool.add(Color.GREEN, 5)
+        return game
+
+    def test_creature_resolves_via_enter_battlefield_effect(self):
+        """Casting a creature should inject enter_battlefield into effects."""
+        game = self._make_game_with_mana()
+        creature_card = Card(
+            name="Grizzly Bears", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{1}{G}"), power=2, toughness=2,
+        )
+        from mtg_engine.core.card import CardInstance
+        ci = CardInstance(card=creature_card, zone=Zone.HAND,
+                          owner_index=0, controller_index=0)
+        game.state.cards.append(ci)
+
+        game.cast_spell(0, ci.instance_id)
+        # The stack item should have enter_battlefield in its effects
+        stack_item = game.state.stack.peek()
+        assert any(e.get("type") == "enter_battlefield" for e in stack_item.effects)
+
+        result = game.resolve_top_of_stack()
+        assert ci.zone == Zone.BATTLEFIELD
+        assert any(e.get("type") == "enter_battlefield" and e["success"]
+                   for e in result["effects_resolved"])
+
+    def test_instant_resolves_effects_then_goes_to_graveyard(self):
+        """Instants resolve effects and go to graveyard — same unified path."""
+        game = self._make_game_with_mana()
+        bolt = Card(
+            name="Lightning Bolt", card_type=CardType.INSTANT,
+            cost=ManaCost.parse("{R}"),
+            effects=[{"type": "damage", "amount": 3}],
+        )
+        ci = CardInstance(card=bolt, zone=Zone.HAND,
+                          owner_index=0, controller_index=0)
+        game.state.cards.append(ci)
+
+        game.cast_spell(0, ci.instance_id, targets=["Bob"])
+        result = game.resolve_top_of_stack()
+        assert ci.zone == Zone.GRAVEYARD
+        assert any(e["success"] for e in result["effects_resolved"])
+
+    def test_ability_on_stack_resolves_same_as_spell(self):
+        """Activated abilities on the stack resolve through the same path."""
+        game = _setup_game()
+        creature = game.state.cards[0]
+        creature.zone = Zone.BATTLEFIELD
+
+        # Simulate an activated ability on the stack
+        ability_item = StackItem(
+            source_id=creature.instance_id,
+            controller_index=0,
+            card_name=f"{creature.name} ability",
+            effects=[{"type": "pump", "target": {"kind": "self"}, "power": 1, "toughness": 1}],
+        )
+        game.state.stack.push(ability_item)
+        result = game.resolve_top_of_stack()
+        assert any(e["success"] for e in result["effects_resolved"])
+        assert creature.temp_power_mod == 1
+
+
+class TestOnCastTriggers:
+    """Verify that CAST triggers fire when spells are cast."""
+
+    def _make_game_with_mana(self):
+        game = _setup_game()
+        game.state.step = Step.MAIN
+        game.state.players[0].mana_pool.add(Color.RED, 5)
+        game.state.players[0].mana_pool.add(Color.GREEN, 5)
+        return game
+
+    def test_cast_trigger_fires_on_spell_cast(self):
+        """A permanent with 'whenever you cast a spell' should trigger."""
+        game = self._make_game_with_mana()
+
+        # Put a permanent on the battlefield that triggers on any cast
+        watcher_card = Card(
+            name="Cast Watcher", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{G}"), power=1, toughness=1,
+            triggered_abilities=[{
+                "trigger": "cast",
+                "source": "you",
+                "effects": [{"type": "gain_life", "amount": 1}],
+            }],
+        )
+        watcher = CardInstance(card=watcher_card, zone=Zone.BATTLEFIELD,
+                               owner_index=0, controller_index=0)
+        game.state.cards.append(watcher)
+
+        # Cast a spell
+        bolt = Card(name="Shock", card_type=CardType.INSTANT,
+                    cost=ManaCost.parse("{R}"),
+                    effects=[{"type": "damage", "amount": 2}])
+        bolt_ci = CardInstance(card=bolt, zone=Zone.HAND,
+                               owner_index=0, controller_index=0)
+        game.state.cards.append(bolt_ci)
+
+        game.cast_spell(0, bolt_ci.instance_id, targets=["Bob"])
+
+        # Cast trigger should be pending
+        assert game.state.triggers.has_pending
+
+    def test_cast_trigger_goes_on_stack_and_resolves(self):
+        """Triggered ability from cast should go on stack and resolve."""
+        game = self._make_game_with_mana()
+        life_before = game.state.players[0].life
+
+        # Permanent that gains 2 life whenever controller casts a spell
+        watcher_card = Card(
+            name="Soul Warden", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{G}"), power=1, toughness=1,
+            triggered_abilities=[{
+                "trigger": "cast",
+                "source": "you",
+                "effects": [{"type": "gain_life", "amount": 2}],
+            }],
+        )
+        watcher = CardInstance(card=watcher_card, zone=Zone.BATTLEFIELD,
+                               owner_index=0, controller_index=0)
+        game.state.cards.append(watcher)
+
+        # Cast a spell
+        bolt = Card(name="Shock", card_type=CardType.INSTANT,
+                    cost=ManaCost.parse("{R}"),
+                    effects=[{"type": "damage", "amount": 2}])
+        bolt_ci = CardInstance(card=bolt, zone=Zone.HAND,
+                               owner_index=0, controller_index=0)
+        game.state.cards.append(bolt_ci)
+
+        game.cast_spell(0, bolt_ci.instance_id, targets=["Bob"])
+
+        # Put triggers on the stack
+        count = game.put_triggers_on_stack()
+        assert count == 1
+
+        # Stack should have: [Shock, Soul Warden trigger]
+        # Trigger is on top (LIFO), resolves first
+        assert game.state.stack.size == 2
+        assert game.state.stack.peek().card_name == "Soul Warden trigger"
+
+        # Resolve the trigger
+        game.resolve_top_of_stack()
+        assert game.state.players[0].life == life_before + 2
+
+        # Now resolve the spell
+        game.resolve_top_of_stack()
+        assert game.state.stack.is_empty
+
+    def test_no_cast_trigger_when_no_matching_permanent(self):
+        """No triggers should fire if no permanents care about casts."""
+        game = self._make_game_with_mana()
+
+        bolt = Card(name="Shock", card_type=CardType.INSTANT,
+                    cost=ManaCost.parse("{R}"),
+                    effects=[{"type": "damage", "amount": 2}])
+        bolt_ci = CardInstance(card=bolt, zone=Zone.HAND,
+                               owner_index=0, controller_index=0)
+        game.state.cards.append(bolt_ci)
+
+        game.cast_spell(0, bolt_ci.instance_id, targets=["Bob"])
+        assert not game.state.triggers.has_pending
