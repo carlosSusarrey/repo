@@ -125,7 +125,7 @@ MANA_COLOR: "W" | "U" | "B" | "R" | "G" | "C"
 
 CARD_NAME: "\"" /[^"]+/ "\""
 QUOTED_STRING: "\"" /[^"]+/ "\""
-CARD_TYPE: "Creature" | "Instant" | "Sorcery" | "Enchantment" | "Artifact" | "Planeswalker" | "Land"
+CARD_TYPE: "Creature" | "Instant" | "Sorcery" | "Enchantment" | "Artifact" | "Planeswalker" | "Land" | "Battle"
 SUPERTYPE: "Legendary" | "Basic" | "Snow"
 MANA_SYMBOL: "{" /[WUBRGCXSP0-9\/]+/ "}"
 IDENTIFIER: /[a-zA-Z_][a-zA-Z0-9_ ]*/

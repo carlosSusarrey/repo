@@ -18,6 +18,19 @@ from mtg_engine.core.face_down import cast_face_down, turn_face_up, is_face_down
 from mtg_engine.core.transform import DoubleFacedCard, transform, is_transformed
 from mtg_engine.core.sagas import ChapterAbility, SagaState, setup_saga, add_lore_counter
 from mtg_engine.core.adventure import AdventureData, setup_adventure
+from mtg_engine.core.poison import (
+    add_poison_counters, check_poison_loss, has_infect, has_toxic, has_wither,
+)
+from mtg_engine.core.commander import (
+    CommanderState, get_color_identity, validate_commander, validate_deck,
+)
+from mtg_engine.core.multiplayer import (
+    MultiplayerState, get_next_player, get_apnap_order, setup_multiplayer,
+)
+from mtg_engine.core.sideboard import Sideboard, create_sideboard, wish, learn
+from mtg_engine.core.battle import (
+    BattleState, setup_battle, deal_damage_to_battle, is_battle_defeated,
+)
 
 __all__ = [
     "Color", "CardType", "Phase", "Step", "Zone",
@@ -36,4 +49,9 @@ __all__ = [
     "DoubleFacedCard", "transform", "is_transformed",
     "ChapterAbility", "SagaState", "setup_saga", "add_lore_counter",
     "AdventureData", "setup_adventure",
+    "add_poison_counters", "check_poison_loss", "has_infect", "has_toxic", "has_wither",
+    "CommanderState", "get_color_identity", "validate_commander", "validate_deck",
+    "MultiplayerState", "get_next_player", "get_apnap_order", "setup_multiplayer",
+    "Sideboard", "create_sideboard", "wish", "learn",
+    "BattleState", "setup_battle", "deal_damage_to_battle", "is_battle_defeated",
 ]

@@ -19,6 +19,7 @@ CARD_TYPE_MAP = {
     "Artifact": CardType.ARTIFACT,
     "Planeswalker": CardType.PLANESWALKER,
     "Land": CardType.LAND,
+    "Battle": CardType.BATTLE,
 }
 
 SUPERTYPE_MAP = {

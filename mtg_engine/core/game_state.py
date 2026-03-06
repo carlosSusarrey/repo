@@ -154,6 +154,12 @@ class GameState:
                 player.lost = True
                 actions.append(f"{player.name} has lost (life <= 0)")
 
+        # CR 704.5c: Player with 10+ poison counters loses
+        for i, player in enumerate(self.players):
+            if player.poison_counters >= 10 and not player.lost:
+                player.lost = True
+                actions.append(f"{player.name} has lost (10+ poison counters)")
+
         # CR 704.5b: Creature with 0 or less toughness goes to graveyard
         # CR 704.5c: Creature with lethal damage goes to graveyard (if not indestructible)
         for card in self.get_battlefield():
@@ -203,6 +209,14 @@ class GameState:
                 if card.counters["-1/-1"] == 0:
                     del card.counters["-1/-1"]
                 actions.append(f"{card.name}: {cancel} +1/+1 and -1/-1 counters cancel")
+
+        # CR 310.7 / CR 704.5s: Battle with 0 defense counters is exiled
+        for card in self.get_battlefield():
+            if card.card.card_type == CardType.BATTLE:
+                defense = card.counters.get("defense", 0)
+                if defense <= 0:
+                    self.move_card(card.instance_id, Zone.EXILE)
+                    actions.append(f"{card.name} exiled (0 defense counters)")
 
         # CR 704.5p: Aura not attached to legal object goes to graveyard
         for card in self.get_battlefield():

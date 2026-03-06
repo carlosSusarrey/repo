@@ -20,6 +20,7 @@ class CardType(Enum):
     ARTIFACT = auto()
     PLANESWALKER = auto()
     LAND = auto()
+    BATTLE = auto()
 
 
 class SuperType(Enum):
