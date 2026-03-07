@@ -120,7 +120,152 @@ class TestWardInGame:
         assert result is True
 
 
-# ---- Protection ----
+class TestHexproofInGame:
+    def _setup_game(self):
+        from mtg_engine.core.game import Game
+        deck1 = [Card(name=f"Mountain{i}", card_type=CardType.LAND) for i in range(10)]
+        deck2 = [Card(name=f"Mountain{i}", card_type=CardType.LAND) for i in range(10)]
+        game = Game(["Alice", "Bob"], [deck1, deck2])
+        return game
+
+    def test_cant_target_opponents_hexproof_creature(self):
+        game = self._setup_game()
+        creature = Card(
+            name="Troll", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{2}{G}"), power=4, toughness=4,
+            keywords={Keyword.HEXPROOF},
+        )
+        creature_inst = CardInstance(
+            card=creature, zone=Zone.BATTLEFIELD,
+            owner_index=1, controller_index=1,
+        )
+        game.state.cards.append(creature_inst)
+
+        bolt = Card(
+            name="Lightning Bolt", card_type=CardType.INSTANT,
+            cost=ManaCost.parse("{R}"),
+            effects=[{"type": "damage", "amount": 3}],
+        )
+        bolt_inst = CardInstance(
+            card=bolt, zone=Zone.HAND,
+            owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(bolt_inst)
+
+        game.state.players[0].mana_pool.red = 1
+        from mtg_engine.core.enums import Step
+        game.state.step = Step.MAIN
+
+        result = game.cast_spell(0, bolt_inst.instance_id, targets=[creature_inst.instance_id])
+        assert result is False
+
+    def test_can_target_own_hexproof_creature(self):
+        game = self._setup_game()
+        creature = Card(
+            name="Troll", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{2}{G}"), power=4, toughness=4,
+            keywords={Keyword.HEXPROOF},
+        )
+        creature_inst = CardInstance(
+            card=creature, zone=Zone.BATTLEFIELD,
+            owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(creature_inst)
+
+        pump = Card(
+            name="Giant Growth", card_type=CardType.INSTANT,
+            cost=ManaCost.parse("{G}"),
+            effects=[{"type": "pump", "power": 3, "toughness": 3}],
+        )
+        pump_inst = CardInstance(
+            card=pump, zone=Zone.HAND,
+            owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(pump_inst)
+
+        game.state.players[0].mana_pool.green = 1
+        from mtg_engine.core.enums import Step
+        game.state.step = Step.MAIN
+
+        result = game.cast_spell(0, pump_inst.instance_id, targets=[creature_inst.instance_id])
+        assert result is True
+
+
+class TestProtectionInGame:
+    def _setup_game(self):
+        from mtg_engine.core.game import Game
+        deck1 = [Card(name=f"Mountain{i}", card_type=CardType.LAND) for i in range(10)]
+        deck2 = [Card(name=f"Mountain{i}", card_type=CardType.LAND) for i in range(10)]
+        game = Game(["Alice", "Bob"], [deck1, deck2])
+        return game
+
+    def test_cant_target_creature_with_protection_from_source_color(self):
+        game = self._setup_game()
+        creature = Card(
+            name="Knight", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{W}{W}"), power=2, toughness=2,
+            keywords={Keyword.PROTECTION},
+            keyword_params={Keyword.PROTECTION: "red"},
+        )
+        creature_inst = CardInstance(
+            card=creature, zone=Zone.BATTLEFIELD,
+            owner_index=1, controller_index=1,
+        )
+        game.state.cards.append(creature_inst)
+
+        bolt = Card(
+            name="Lightning Bolt", card_type=CardType.INSTANT,
+            cost=ManaCost.parse("{R}"),
+            effects=[{"type": "damage", "amount": 3}],
+        )
+        bolt_inst = CardInstance(
+            card=bolt, zone=Zone.HAND,
+            owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(bolt_inst)
+
+        game.state.players[0].mana_pool.red = 1
+        from mtg_engine.core.enums import Step
+        game.state.step = Step.MAIN
+
+        result = game.cast_spell(0, bolt_inst.instance_id, targets=[creature_inst.instance_id])
+        assert result is False
+
+    def test_can_target_creature_with_protection_from_different_color(self):
+        game = self._setup_game()
+        creature = Card(
+            name="Knight", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{W}{W}"), power=2, toughness=2,
+            keywords={Keyword.PROTECTION},
+            keyword_params={Keyword.PROTECTION: "red"},
+        )
+        creature_inst = CardInstance(
+            card=creature, zone=Zone.BATTLEFIELD,
+            owner_index=1, controller_index=1,
+        )
+        game.state.cards.append(creature_inst)
+
+        # Green spell — not blocked by pro-red
+        pump = Card(
+            name="Giant Growth", card_type=CardType.INSTANT,
+            cost=ManaCost.parse("{G}"),
+            effects=[{"type": "pump", "power": 3, "toughness": 3}],
+        )
+        pump_inst = CardInstance(
+            card=pump, zone=Zone.HAND,
+            owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(pump_inst)
+
+        game.state.players[0].mana_pool.green = 1
+        from mtg_engine.core.enums import Step
+        game.state.step = Step.MAIN
+
+        result = game.cast_spell(0, pump_inst.instance_id, targets=[creature_inst.instance_id])
+        assert result is True
+
+
+# ---- Protection (unit-level) ----
 
 class TestProtectionTargeting:
     def test_protection_from_red_blocks_red_spell(self):
