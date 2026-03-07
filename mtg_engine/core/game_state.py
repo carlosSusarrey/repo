@@ -130,6 +130,27 @@ class GameState:
                         self.get_battlefield(),
                         [card],
                     )
+
+            # Fire zone-destination triggers (from any origin zone)
+            event_data = {
+                "card_id": card.instance_id, "card": card,
+                "player_index": card.controller_index,
+                "from_zone": old_zone,
+            }
+            if to_zone == Zone.GRAVEYARD:
+                self.triggers.check_triggers(
+                    TriggerEvent.ENTERS_GRAVEYARD,
+                    event_data,
+                    self.get_battlefield(),
+                    [card],
+                )
+            elif to_zone == Zone.EXILE:
+                self.triggers.check_triggers(
+                    TriggerEvent.IS_EXILED,
+                    event_data,
+                    self.get_battlefield(),
+                    [card],
+                )
         return card
 
     def _handle_leaving_battlefield(self, card: CardInstance) -> None:

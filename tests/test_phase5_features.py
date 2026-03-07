@@ -618,3 +618,357 @@ class TestTargetLegalityOnResolution:
         assert "fizzled" not in result
         hand_after = len(game.state.get_zone(0, Zone.HAND))
         assert hand_after == hand_before + 2
+
+
+# ─── Enters-Graveyard Triggers ────────────────────────────────────────────
+
+
+class TestEntersGraveyardTriggers:
+    """Triggers for "when ~ is put into a graveyard from anywhere"."""
+
+    def test_enters_graveyard_on_destroy(self):
+        """Enters-graveyard fires when a creature on the battlefield is destroyed."""
+        game = _setup_game()
+
+        creature = Card(
+            name="Darksteel Colossus", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{11}"), power=11, toughness=11,
+            triggered_abilities=[{
+                "trigger": "enters_graveyard",
+                "source": "self",
+                "effects": [{"type": "draw", "amount": 1}],
+            }],
+        )
+        inst = _place_on_battlefield(game, creature, controller=0)
+
+        game.state.move_card(inst.instance_id, Zone.GRAVEYARD)
+
+        assert inst.zone == Zone.GRAVEYARD
+        pending = game.state.triggers.pending
+        gy_triggers = [p for p in pending
+                       if p.ability.trigger.event == TriggerEvent.ENTERS_GRAVEYARD]
+        assert len(gy_triggers) >= 1
+
+    def test_enters_graveyard_on_discard(self):
+        """Enters-graveyard fires when a card is discarded from hand."""
+        game = _setup_game()
+
+        creature = Card(
+            name="Grave Scrabbler", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{3}{B}"), power=2, toughness=2,
+            triggered_abilities=[{
+                "trigger": "enters_graveyard",
+                "source": "self",
+                "effects": [{"type": "gain_life", "amount": 2}],
+            }],
+        )
+        inst = CardInstance(
+            card=creature, zone=Zone.HAND,
+            instance_id="grave_scrabbler", owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(inst)
+
+        game.state.move_card(inst.instance_id, Zone.GRAVEYARD)
+
+        assert inst.zone == Zone.GRAVEYARD
+        pending = game.state.triggers.pending
+        gy_triggers = [p for p in pending
+                       if p.ability.trigger.event == TriggerEvent.ENTERS_GRAVEYARD]
+        assert len(gy_triggers) == 1
+
+    def test_enters_graveyard_on_mill(self):
+        """Enters-graveyard fires when a card is milled from library."""
+        game = _setup_game()
+
+        creature = Card(
+            name="Narcomoeba", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{1}{U}"), power=1, toughness=1,
+            triggered_abilities=[{
+                "trigger": "enters_graveyard",
+                "source": "self",
+                "effects": [{"type": "gain_life", "amount": 1}],
+            }],
+        )
+        inst = CardInstance(
+            card=creature, zone=Zone.LIBRARY,
+            instance_id="narcomoeba", owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(inst)
+
+        game.state.move_card(inst.instance_id, Zone.GRAVEYARD)
+
+        assert inst.zone == Zone.GRAVEYARD
+        pending = game.state.triggers.pending
+        gy_triggers = [p for p in pending
+                       if p.ability.trigger.event == TriggerEvent.ENTERS_GRAVEYARD]
+        assert len(gy_triggers) == 1
+
+    def test_enters_graveyard_does_not_fire_on_exile(self):
+        """Enters-graveyard does NOT fire when a card is exiled."""
+        game = _setup_game()
+
+        creature = Card(
+            name="GY Watcher", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{B}"), power=1, toughness=1,
+            triggered_abilities=[{
+                "trigger": "enters_graveyard",
+                "source": "self",
+                "effects": [{"type": "draw", "amount": 1}],
+            }],
+        )
+        inst = _place_on_battlefield(game, creature, controller=0)
+
+        game.state.move_card(inst.instance_id, Zone.EXILE)
+
+        pending = game.state.triggers.pending
+        gy_triggers = [p for p in pending
+                       if p.ability.trigger.event == TriggerEvent.ENTERS_GRAVEYARD]
+        assert len(gy_triggers) == 0
+
+    def test_battlefield_watcher_sees_enters_graveyard(self):
+        """A card on the battlefield can trigger on another card entering graveyard."""
+        game = _setup_game()
+
+        # Watcher: "whenever a creature is put into a graveyard"
+        watcher = Card(
+            name="Syr Konrad", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{3}{B}{B}"), power=5, toughness=4,
+            triggered_abilities=[{
+                "trigger": "enters_graveyard",
+                "source": {"relation": "another", "card_type": "creature"},
+                "effects": [{"type": "damage", "amount": 1}],
+            }],
+        )
+        _place_on_battlefield(game, watcher, controller=0)
+
+        # Discard a creature from hand
+        bear = Card(
+            name="Bear", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{1}{G}"), power=2, toughness=2,
+        )
+        bear_inst = CardInstance(
+            card=bear, zone=Zone.HAND,
+            instance_id="discarded_bear", owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(bear_inst)
+
+        game.state.move_card(bear_inst.instance_id, Zone.GRAVEYARD)
+
+        pending = game.state.triggers.pending
+        gy_triggers = [p for p in pending
+                       if p.ability.trigger.event == TriggerEvent.ENTERS_GRAVEYARD]
+        assert len(gy_triggers) == 1
+        assert gy_triggers[0].ability.effects == [{"type": "damage", "amount": 1}]
+
+    def test_dying_fires_dies_and_enters_graveyard(self):
+        """When a creature dies (battlefield→graveyard), both DIES and ENTERS_GRAVEYARD fire."""
+        game = _setup_game()
+
+        creature = Card(
+            name="Multi Trigger", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{B}"), power=1, toughness=1,
+            triggered_abilities=[
+                {
+                    "trigger": "dies",
+                    "source": "self",
+                    "effects": [{"type": "gain_life", "amount": 1}],
+                },
+                {
+                    "trigger": "enters_graveyard",
+                    "source": "self",
+                    "effects": [{"type": "draw", "amount": 1}],
+                },
+            ],
+        )
+        inst = _place_on_battlefield(game, creature, controller=0)
+        inst.damage_marked = 1  # lethal
+
+        game.state.check_state_based_actions()
+
+        assert inst.zone == Zone.GRAVEYARD
+        pending = game.state.triggers.pending
+        dies = [p for p in pending if p.ability.trigger.event == TriggerEvent.DIES]
+        gy = [p for p in pending if p.ability.trigger.event == TriggerEvent.ENTERS_GRAVEYARD]
+        assert len(dies) >= 1
+        assert len(gy) >= 1
+
+
+# ─── Is-Exiled Triggers ──────────────────────────────────────────────────
+
+
+class TestIsExiledTriggers:
+    """Triggers for "when ~ is exiled"."""
+
+    def test_is_exiled_from_battlefield(self):
+        """Is-exiled fires when a permanent is exiled from the battlefield."""
+        game = _setup_game()
+
+        creature = Card(
+            name="Exile Watcher", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{W}"), power=1, toughness=1,
+            triggered_abilities=[{
+                "trigger": "is_exiled",
+                "source": "self",
+                "effects": [{"type": "draw", "amount": 1}],
+            }],
+        )
+        inst = _place_on_battlefield(game, creature, controller=0)
+
+        game.state.move_card(inst.instance_id, Zone.EXILE)
+
+        assert inst.zone == Zone.EXILE
+        pending = game.state.triggers.pending
+        exile_triggers = [p for p in pending
+                          if p.ability.trigger.event == TriggerEvent.IS_EXILED]
+        assert len(exile_triggers) == 1
+
+    def test_is_exiled_from_graveyard(self):
+        """Is-exiled fires when a card is exiled from the graveyard."""
+        game = _setup_game()
+
+        creature = Card(
+            name="GY Exile Card", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{B}"), power=2, toughness=2,
+            triggered_abilities=[{
+                "trigger": "is_exiled",
+                "source": "self",
+                "effects": [{"type": "gain_life", "amount": 3}],
+            }],
+        )
+        inst = CardInstance(
+            card=creature, zone=Zone.GRAVEYARD,
+            instance_id="gy_exile_card", owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(inst)
+
+        game.state.move_card(inst.instance_id, Zone.EXILE)
+
+        assert inst.zone == Zone.EXILE
+        pending = game.state.triggers.pending
+        exile_triggers = [p for p in pending
+                          if p.ability.trigger.event == TriggerEvent.IS_EXILED]
+        assert len(exile_triggers) == 1
+
+    def test_is_exiled_does_not_fire_on_destroy(self):
+        """Is-exiled does NOT fire when a card goes to the graveyard."""
+        game = _setup_game()
+
+        creature = Card(
+            name="Exile Only", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{W}"), power=1, toughness=1,
+            triggered_abilities=[{
+                "trigger": "is_exiled",
+                "source": "self",
+                "effects": [{"type": "draw", "amount": 1}],
+            }],
+        )
+        inst = _place_on_battlefield(game, creature, controller=0)
+
+        game.state.move_card(inst.instance_id, Zone.GRAVEYARD)
+
+        pending = game.state.triggers.pending
+        exile_triggers = [p for p in pending
+                          if p.ability.trigger.event == TriggerEvent.IS_EXILED]
+        assert len(exile_triggers) == 0
+
+    def test_battlefield_watcher_sees_exile(self):
+        """A card on the battlefield triggers when another card is exiled."""
+        game = _setup_game()
+
+        watcher = Card(
+            name="Exile Watcher", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{2}{W}"), power=2, toughness=2,
+            triggered_abilities=[{
+                "trigger": "is_exiled",
+                "source": {"relation": "another"},
+                "effects": [{"type": "gain_life", "amount": 1}],
+            }],
+        )
+        _place_on_battlefield(game, watcher, controller=0)
+
+        victim = Card(
+            name="Victim", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{G}"), power=1, toughness=1,
+        )
+        victim_inst = _place_on_battlefield(game, victim, controller=1, instance_id="victim_exile")
+
+        game.state.move_card(victim_inst.instance_id, Zone.EXILE)
+
+        pending = game.state.triggers.pending
+        exile_triggers = [p for p in pending
+                          if p.ability.trigger.event == TriggerEvent.IS_EXILED]
+        assert len(exile_triggers) >= 1
+        # The watcher's trigger should be the one that has gain_life
+        watcher_triggers = [p for p in exile_triggers
+                            if p.ability.effects == [{"type": "gain_life", "amount": 1}]]
+        assert len(watcher_triggers) == 1
+
+
+# ─── DSL Parsing for New Trigger Events ──────────────────────────────────
+
+
+class TestDSLNewTriggerEvents:
+    """Test that the DSL grammar correctly parses the new trigger event types."""
+
+    def test_parse_enters_graveyard_trigger(self):
+        from mtg_engine.dsl.parser import parse_card
+        cards = parse_card('''
+            card "Grave Crawler" {
+                type: Creature
+                cost: {B}
+                p/t: 2 / 1
+                when(enters_graveyard): draw(1)
+            }
+        ''')
+        assert len(cards) == 1
+        card = cards[0]
+        assert len(card.triggered_abilities) == 1
+        trig = card.triggered_abilities[0]
+        assert trig["trigger"] == "enters_graveyard"
+        assert trig["source"] == {"relation": "self"}
+
+    def test_parse_is_exiled_trigger(self):
+        from mtg_engine.dsl.parser import parse_card
+        cards = parse_card('''
+            card "Exile Tracker" {
+                type: Creature
+                cost: {1}{W}
+                p/t: 1 / 1
+                when(is_exiled): gain_life(3)
+            }
+        ''')
+        assert len(cards) == 1
+        card = cards[0]
+        assert len(card.triggered_abilities) == 1
+        trig = card.triggered_abilities[0]
+        assert trig["trigger"] == "is_exiled"
+
+    def test_parse_enters_graveyard_with_filter(self):
+        from mtg_engine.dsl.parser import parse_card
+        cards = parse_card('''
+            card "Konrad" {
+                type: Creature
+                cost: {3}{B}{B}
+                p/t: 5 / 4
+                when(enters_graveyard, another creature): damage(target(player), 1)
+            }
+        ''')
+        card = cards[0]
+        trig = card.triggered_abilities[0]
+        assert trig["trigger"] == "enters_graveyard"
+        assert trig["source"]["relation"] == "another"
+        assert trig["source"]["card_type"] == "creature"
+
+    def test_parse_is_exiled_with_filter(self):
+        from mtg_engine.dsl.parser import parse_card
+        cards = parse_card('''
+            card "Rest in Peace" {
+                type: Enchantment
+                cost: {1}{W}
+                when(is_exiled, another): gain_life(1)
+            }
+        ''')
+        card = cards[0]
+        trig = card.triggered_abilities[0]
+        assert trig["trigger"] == "is_exiled"
+        assert trig["source"]["relation"] == "another"
