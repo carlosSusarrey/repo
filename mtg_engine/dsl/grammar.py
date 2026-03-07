@@ -48,8 +48,9 @@ loyalty_prop: "loyalty:" NUMBER
 rules_prop: "rules:" QUOTED_STRING
 effect_prop: "effect:" effect
 keywords_prop: "keywords:" keyword_list
-triggered_prop: "when(" TRIGGER_EVENT "," SOURCE_FILTER "):" effect
+triggered_prop: "when(" TRIGGER_EVENT "," source_filter_list "):" effect
              | "when(" TRIGGER_EVENT "):" effect
+source_filter_list: SOURCE_FILTER+
 activated_prop: "activate(" mana_cost "):" effect
 loyalty_ability_prop: "loyalty(" SIGNED_NUMBER "):" effect
 enchant_prop: "enchant:" ENCHANT_TYPE
@@ -144,8 +145,10 @@ TRIGGER_EVENT: "enters_battlefield" | "leaves_battlefield" | "dies" | "attacks"
              | "blocks" | "deals_combat_damage_to_player" | "begin_upkeep"
              | "end_step" | "land_enters" | "cast"
              | "transforms" | "level_up"
-SOURCE_FILTER: "self" | "you" | "any" | "another" | "creature" | "artifact"
-             | "enchantment" | "nontoken" | "permanent"
+SOURCE_FILTER: "self" | "you" | "any" | "another"
+             | "creature" | "artifact" | "enchantment" | "planeswalker"
+             | "land" | "battle" | "kindred"
+             | "token" | "nontoken" | "permanent"
 
 %import common.WS
 %ignore WS

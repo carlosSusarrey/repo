@@ -700,7 +700,7 @@ class TestDSLTriggeredAbilityFilters:
         assert len(card.triggered_abilities) == 1
         trigger = card.triggered_abilities[0]
         assert trigger["trigger"] == "enters_battlefield"
-        assert trigger["source"] == "another"
+        assert trigger["source"] == {"relation": "another"}
         assert trigger["effects"][0]["type"] == "gain_life"
 
     def test_parse_triggered_without_filter_defaults_to_self(self):
@@ -716,7 +716,7 @@ class TestDSLTriggeredAbilityFilters:
         cards = parse_card(dsl)
         card = cards[0]
         trigger = card.triggered_abilities[0]
-        assert trigger["source"] == "self"
+        assert trigger["source"] == {"relation": "self"}
 
     def test_parse_cast_trigger_with_you_filter(self):
         from mtg_engine.dsl.parser import parse_card
@@ -732,4 +732,51 @@ class TestDSLTriggeredAbilityFilters:
         card = cards[0]
         trigger = card.triggered_abilities[0]
         assert trigger["trigger"] == "cast"
-        assert trigger["source"] == "you"
+        assert trigger["source"] == {"relation": "you"}
+
+    def test_parse_composable_filter(self):
+        """Multiple filter words should compose into a single dict."""
+        from mtg_engine.dsl.parser import parse_card
+        dsl = '''
+        card "Essence Warden" {
+            type: Creature
+            cost: {G}
+            p/t: 1 / 1
+            when(enters_battlefield, another creature nontoken): gain_life(1)
+        }
+        '''
+        cards = parse_card(dsl)
+        card = cards[0]
+        trigger = card.triggered_abilities[0]
+        assert trigger["source"] == {
+            "relation": "another",
+            "card_type": "creature",
+            "token": False,
+        }
+
+    def test_parse_card_type_only_filter(self):
+        from mtg_engine.dsl.parser import parse_card
+        dsl = '''
+        card "Artifact Watcher" {
+            type: Creature
+            cost: {2}
+            p/t: 1 / 3
+            when(enters_battlefield, artifact): draw(1)
+        }
+        '''
+        cards = parse_card(dsl)
+        trigger = cards[0].triggered_abilities[0]
+        assert trigger["source"] == {"card_type": "artifact"}
+
+    def test_parse_token_filter(self):
+        from mtg_engine.dsl.parser import parse_card
+        dsl = '''
+        card "Token Counter" {
+            type: Enchantment
+            cost: {1}{W}
+            when(enters_battlefield, token): gain_life(1)
+        }
+        '''
+        cards = parse_card(dsl)
+        trigger = cards[0].triggered_abilities[0]
+        assert trigger["source"] == {"token": True}

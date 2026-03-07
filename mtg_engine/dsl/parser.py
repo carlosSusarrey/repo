@@ -165,15 +165,31 @@ class CardTransformer(Transformer):
                 keywords.add(KEYWORD_MAP[kw_name])
         return keywords
 
+    def source_filter_list(self, items):
+        """Build a structured source filter dict from filter keywords."""
+        from mtg_engine.core.triggers import _RELATION_KEYWORDS, _CARD_TYPE_KEYWORDS
+        result = {}
+        for item in items:
+            word = str(item).strip()
+            if word in _RELATION_KEYWORDS:
+                result["relation"] = word
+            elif word in _CARD_TYPE_KEYWORDS or word == "permanent":
+                result["card_type"] = word
+            elif word == "token":
+                result["token"] = True
+            elif word == "nontoken":
+                result["token"] = False
+        return result
+
     def triggered_prop(self, items):
         trigger_event = str(items[0]).strip()
         if len(items) == 3:
-            # when(event, source_filter): effect
-            source_filter = str(items[1]).strip()
+            # when(event, filter_words): effect
+            source_filter = items[1]  # already a dict from source_filter_list
             effect = items[2]
         else:
             # when(event): effect — defaults to "self"
-            source_filter = "self"
+            source_filter = {"relation": "self"}
             effect = items[1]
         return {"triggered": {
             "trigger": trigger_event,
