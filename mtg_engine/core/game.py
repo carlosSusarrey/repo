@@ -136,13 +136,15 @@ class Game:
         # Trigger landfall
         self.state.triggers.check_triggers(
             TriggerEvent.LAND_ENTERS,
-            {"card_id": card.instance_id, "card": card, "player_index": player_index},
+            {"card_id": card.instance_id, "card": card, "player_index": player_index,
+             "from_zone": Zone.HAND},
             self.state.get_battlefield(),
         )
         # ETB trigger
         self.state.triggers.check_triggers(
             TriggerEvent.ENTERS_BATTLEFIELD,
-            {"card_id": card.instance_id, "card": card, "player_index": player_index},
+            {"card_id": card.instance_id, "card": card, "player_index": player_index,
+             "from_zone": Zone.HAND},
             self.state.get_battlefield(),
         )
         return True
@@ -666,6 +668,7 @@ class Game:
         elif effect_type == "enter_battlefield":
             source_card = self.state.find_card(item.source_id)
             if source_card:
+                from_zone = source_card.zone
                 self.state.move_card(source_card.instance_id, Zone.BATTLEFIELD)
                 # Auras attach to their target on resolution
                 if "Aura" in source_card.card.subtypes and item.targets:
@@ -674,7 +677,8 @@ class Game:
                 self.state.triggers.check_triggers(
                     TriggerEvent.ENTERS_BATTLEFIELD,
                     {"card_id": source_card.instance_id, "card": source_card,
-                     "player_index": source_card.controller_index},
+                     "player_index": source_card.controller_index,
+                     "from_zone": from_zone},
                     self.state.get_battlefield(),
                 )
                 result["success"] = True
@@ -726,7 +730,8 @@ class Game:
         self.state.triggers.check_triggers(
             TriggerEvent.ENTERS_BATTLEFIELD,
             {"card_id": token_instance.instance_id, "card": token_instance,
-             "player_index": controller_index},
+             "player_index": controller_index,
+             "from_zone": None},
             self.state.get_battlefield(),
         )
         return token_instance

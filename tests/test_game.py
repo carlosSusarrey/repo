@@ -6,6 +6,7 @@ from mtg_engine.core.game import Game
 from mtg_engine.core.game_state import GameState
 from mtg_engine.core.mana import ManaCost
 from mtg_engine.core.player import Player
+from mtg_engine.core.triggers import TriggerEvent
 
 
 class TestGameState:
@@ -247,3 +248,159 @@ class TestCastSpell:
         result = game.cast_spell(0, sorcery.instance_id)
         assert result is False
         assert sorcery.zone == Zone.HAND
+
+
+class TestFromZoneTracking:
+    """Verify that ETB triggers carry from_zone so we can distinguish
+    'was cast' (from_zone=STACK) vs 'put onto battlefield' (from_zone=HAND)."""
+
+    def _make_game(self):
+        mountain = Card(name="Mountain", card_type=CardType.LAND)
+        deck = [mountain] * 40
+        game = Game(["Alice", "Bob"], [deck, deck])
+        game.draw_opening_hands()
+        game.state.step = Step.MAIN
+        return game
+
+    def test_cast_creature_etb_from_zone_is_stack(self):
+        """A creature cast from hand resolves through the stack.
+        The ETB trigger event should carry from_zone=STACK.
+
+        resolve_top_of_stack drains pending triggers onto the stack,
+        so we check that the ETB ability ended up on the stack.
+        To verify from_zone, we intercept the trigger before it's drained.
+        """
+        game = self._make_game()
+
+        etb_watcher = Card(
+            name="Watcher", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{G}"), power=1, toughness=1,
+            triggered_abilities=[{
+                "trigger": "enters_battlefield",
+                "source": "self",
+                "effects": [{"type": "gain_life", "amount": 1}],
+            }],
+        )
+        inst = CardInstance(
+            card=etb_watcher, zone=Zone.HAND,
+            instance_id="watcher_1", owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(inst)
+        game.state.players[0].mana_pool.add(Color.GREEN, 1)
+
+        game.cast_spell(0, inst.instance_id)
+        assert inst.zone == Zone.STACK
+
+        # Manually resolve the enter_battlefield effect so we can
+        # inspect pending triggers before put_triggers_on_stack drains them
+        item = game.state.stack.pop()
+        for effect in item.effects:
+            game._resolve_effect(effect, item)
+        item.clear_stack_state()
+
+        # Now the ETB trigger is in pending — check from_zone
+        pending = game.state.triggers.pending
+        etb_triggers = [
+            p for p in pending
+            if p.ability.trigger.event == TriggerEvent.ENTERS_BATTLEFIELD
+        ]
+        assert len(etb_triggers) == 1
+        assert etb_triggers[0].event_data["from_zone"] == Zone.STACK
+
+    def test_land_etb_from_zone_is_hand(self):
+        """A land played from hand enters the battlefield directly.
+        The ETB trigger event should carry from_zone=HAND."""
+        game = self._make_game()
+
+        etb_land = Card(
+            name="ETB Land", card_type=CardType.LAND,
+            triggered_abilities=[{
+                "trigger": "enters_battlefield",
+                "source": "self",
+                "effects": [{"type": "gain_life", "amount": 1}],
+            }],
+        )
+        inst = CardInstance(
+            card=etb_land, zone=Zone.HAND,
+            instance_id="etb_land_1", owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(inst)
+
+        game.play_land(0, inst.instance_id)
+        assert inst.zone == Zone.BATTLEFIELD
+
+        pending = game.state.triggers.pending
+        etb_triggers = [
+            p for p in pending
+            if p.ability.trigger.event == TriggerEvent.ENTERS_BATTLEFIELD
+        ]
+        assert len(etb_triggers) == 1
+        assert etb_triggers[0].event_data["from_zone"] == Zone.HAND
+
+    def test_cast_vs_direct_placement_distinction(self):
+        """The whole point: a creature cast from hand goes HAND→STACK→BATTLEFIELD
+        (from_zone=STACK), while a land played directly goes HAND→BATTLEFIELD
+        (from_zone=HAND). Triggers can tell the difference."""
+        game = self._make_game()
+
+        # --- Path 1: Cast creature from hand (goes through stack) ---
+        creature_def = Card(
+            name="Observer", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{G}"), power=1, toughness=1,
+            triggered_abilities=[{
+                "trigger": "enters_battlefield",
+                "source": "self",
+                "effects": [{"type": "gain_life", "amount": 1}],
+            }],
+        )
+        cast_inst = CardInstance(
+            card=creature_def, zone=Zone.HAND,
+            instance_id="cast_obs", owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(cast_inst)
+        game.state.players[0].mana_pool.add(Color.GREEN, 1)
+
+        game.cast_spell(0, cast_inst.instance_id)
+        game.state.triggers.clear_pending()  # clear cast triggers
+
+        # Manually resolve to inspect pending triggers before drain
+        item = game.state.stack.pop()
+        for effect in item.effects:
+            game._resolve_effect(effect, item)
+        item.clear_stack_state()
+
+        cast_etbs = [
+            p for p in game.state.triggers.pending
+            if p.ability.trigger.event == TriggerEvent.ENTERS_BATTLEFIELD
+        ]
+        assert len(cast_etbs) == 1
+        assert cast_etbs[0].event_data["from_zone"] == Zone.STACK
+        game.state.triggers.clear_pending()
+
+        # --- Path 2: Land played directly from hand (no stack) ---
+        etb_land = Card(
+            name="ETB Land", card_type=CardType.LAND,
+            triggered_abilities=[{
+                "trigger": "enters_battlefield",
+                "source": "self",
+                "effects": [{"type": "gain_life", "amount": 1}],
+            }],
+        )
+        land_inst = CardInstance(
+            card=etb_land, zone=Zone.HAND,
+            instance_id="direct_land", owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(land_inst)
+
+        game.play_land(0, land_inst.instance_id)
+
+        land_etbs = [
+            p for p in game.state.triggers.pending
+            if p.ability.trigger.event == TriggerEvent.ENTERS_BATTLEFIELD
+        ]
+        assert len(land_etbs) == 1
+        assert land_etbs[0].event_data["from_zone"] == Zone.HAND
+
+        # Both on battlefield, but their ETB events carried different from_zone
+        assert cast_inst.zone == Zone.BATTLEFIELD
+        assert land_inst.zone == Zone.BATTLEFIELD

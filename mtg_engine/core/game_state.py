@@ -127,6 +127,7 @@ class GameState:
                 etb_event = {
                     "card_id": card.instance_id, "card": card,
                     "player_index": card.controller_index,
+                    "from_zone": old_zone,
                 }
                 etb_result = self.replacement_effects.check_replacement(
                     ReplacementType.ENTER_BATTLEFIELD, etb_event,
