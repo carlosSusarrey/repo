@@ -93,6 +93,8 @@ def validate_blockers(
         if not kw_can_block(
             attacker.keywords, blocker.keywords,
             attacker.card.colors, blocker.card.colors,
+            attacker_keyword_params=attacker.card.keyword_params,
+            blocker_card_types=blocker.card.card_types,
         ):
             continue
 

@@ -1,7 +1,7 @@
 """Tests for game state and game logic."""
 
 from mtg_engine.core.card import Card, CardInstance
-from mtg_engine.core.enums import CardType, Zone
+from mtg_engine.core.enums import CardType, Color, Step, Zone
 from mtg_engine.core.game import Game
 from mtg_engine.core.game_state import GameState
 from mtg_engine.core.mana import ManaCost
@@ -81,3 +81,169 @@ class TestGame:
         game.draw_card(0)  # draws the only card
         game.draw_card(0)  # empty library
         assert game.state.players[0].lost
+
+
+class TestCastSpell:
+    """Tests for casting spells and stack interaction."""
+
+    def _make_game_with_spell(self, card_type=CardType.CREATURE, cost_str="{R}"):
+        """Create a game where player 0 has a spell in hand and mana to cast it."""
+        spell = Card(
+            name="Test Spell",
+            card_type=card_type,
+            cost=ManaCost.parse(cost_str),
+            power=2 if card_type == CardType.CREATURE else None,
+            toughness=2 if card_type == CardType.CREATURE else None,
+            effects=[{"type": "damage", "amount": 3}] if card_type in (CardType.INSTANT, CardType.SORCERY) else [],
+        )
+        mountain = Card(name="Mountain", card_type=CardType.LAND)
+        deck1 = [spell] + [mountain] * 39
+        deck2 = [mountain] * 40
+        game = Game(["Alice", "Bob"], [deck1, deck2])
+        game.draw_opening_hands()
+        # Set to main phase so sorcery-speed spells can be cast
+        game.state.step = Step.MAIN
+        # Give player red mana
+        game.state.players[0].mana_pool.add(Color.RED, 3)
+        return game
+
+    def test_cast_spell_puts_on_stack(self):
+        """Casting a spell should move it to the stack zone and push a StackItem."""
+        game = self._make_game_with_spell(CardType.CREATURE, "{R}")
+        hand = game.state.get_zone(0, Zone.HAND)
+        spell = next(c for c in hand if c.name == "Test Spell")
+
+        assert game.state.stack.is_empty
+        result = game.cast_spell(0, spell.instance_id)
+
+        assert result is True
+        assert spell.zone == Zone.STACK
+        assert game.state.stack.size == 1
+        assert game.state.stack.peek().card_name == "Test Spell"
+        assert game.state.stack.peek().source_id == spell.instance_id
+
+    def test_cast_spell_pays_mana(self):
+        """Casting a spell should deduct mana from the player's pool."""
+        game = self._make_game_with_spell(CardType.CREATURE, "{R}")
+        hand = game.state.get_zone(0, Zone.HAND)
+        spell = next(c for c in hand if c.name == "Test Spell")
+        initial_red = game.state.players[0].mana_pool.red
+
+        game.cast_spell(0, spell.instance_id)
+
+        assert game.state.players[0].mana_pool.red == initial_red - 1
+
+    def test_cast_spell_fails_without_mana(self):
+        """Casting without sufficient mana should fail and leave card in hand."""
+        game = self._make_game_with_spell(CardType.CREATURE, "{R}")
+        game.state.players[0].mana_pool.empty()  # remove all mana
+        hand = game.state.get_zone(0, Zone.HAND)
+        spell = next(c for c in hand if c.name == "Test Spell")
+
+        result = game.cast_spell(0, spell.instance_id)
+
+        assert result is False
+        assert spell.zone == Zone.HAND
+        assert game.state.stack.is_empty
+
+    def test_cast_land_fails(self):
+        """Lands cannot be cast — they are played, not cast."""
+        game = self._make_game_with_spell()
+        hand = game.state.get_zone(0, Zone.HAND)
+        land = next(c for c in hand if c.name == "Mountain")
+
+        result = game.cast_spell(0, land.instance_id)
+
+        assert result is False
+        assert game.state.stack.is_empty
+
+    def test_resolve_creature_goes_to_battlefield(self):
+        """After resolving, a creature spell should move from stack to battlefield."""
+        game = self._make_game_with_spell(CardType.CREATURE, "{R}")
+        hand = game.state.get_zone(0, Zone.HAND)
+        spell = next(c for c in hand if c.name == "Test Spell")
+
+        game.cast_spell(0, spell.instance_id)
+        assert spell.zone == Zone.STACK
+
+        game.resolve_top_of_stack()
+        assert spell.zone == Zone.BATTLEFIELD
+
+    def test_resolve_instant_goes_to_graveyard(self):
+        """After resolving, an instant should go to the graveyard."""
+        game = self._make_game_with_spell(CardType.INSTANT, "{R}")
+        hand = game.state.get_zone(0, Zone.HAND)
+        spell = next(c for c in hand if c.name == "Test Spell")
+
+        game.cast_spell(0, spell.instance_id)
+        assert spell.zone == Zone.STACK
+
+        game.resolve_top_of_stack()
+        assert spell.zone == Zone.GRAVEYARD
+        assert game.state.stack.is_empty
+
+    def test_resolve_sorcery_goes_to_graveyard(self):
+        """After resolving, a sorcery should go to the graveyard."""
+        game = self._make_game_with_spell(CardType.SORCERY, "{R}")
+        hand = game.state.get_zone(0, Zone.HAND)
+        spell = next(c for c in hand if c.name == "Test Spell")
+
+        game.cast_spell(0, spell.instance_id)
+        game.resolve_top_of_stack()
+        assert spell.zone == Zone.GRAVEYARD
+
+    def test_multiple_spells_stack_lifo(self):
+        """Multiple spells should resolve in LIFO order (last cast resolves first)."""
+        spell_a = Card(name="Spell A", card_type=CardType.INSTANT,
+                       cost=ManaCost.parse("{R}"), effects=[])
+        spell_b = Card(name="Spell B", card_type=CardType.INSTANT,
+                       cost=ManaCost.parse("{R}"), effects=[])
+        mountain = Card(name="Mountain", card_type=CardType.LAND)
+        deck1 = [spell_a, spell_b] + [mountain] * 38
+        deck2 = [mountain] * 40
+        game = Game(["Alice", "Bob"], [deck1, deck2])
+        game.draw_opening_hands()
+        game.state.step = Step.MAIN
+        game.state.players[0].mana_pool.add(Color.RED, 5)
+
+        hand = game.state.get_zone(0, Zone.HAND)
+        card_a = next(c for c in hand if c.name == "Spell A")
+        card_b = next(c for c in hand if c.name == "Spell B")
+
+        game.cast_spell(0, card_a.instance_id)
+        game.cast_spell(0, card_b.instance_id)
+
+        assert game.state.stack.size == 2
+        # LIFO: Spell B (cast second) should resolve first
+        assert game.state.stack.peek().card_name == "Spell B"
+
+        game.resolve_top_of_stack()
+        assert game.state.stack.size == 1
+        assert game.state.stack.peek().card_name == "Spell A"
+
+    def test_cast_sorcery_fails_with_nonempty_stack(self):
+        """Sorcery-speed spells can't be cast when the stack is non-empty."""
+        spell_a = Card(name="Instant A", card_type=CardType.INSTANT,
+                       cost=ManaCost.parse("{R}"), effects=[])
+        spell_b = Card(name="Sorcery B", card_type=CardType.SORCERY,
+                       cost=ManaCost.parse("{R}"), effects=[])
+        mountain = Card(name="Mountain", card_type=CardType.LAND)
+        deck1 = [spell_a, spell_b] + [mountain] * 38
+        deck2 = [mountain] * 40
+        game = Game(["Alice", "Bob"], [deck1, deck2])
+        game.draw_opening_hands()
+        game.state.step = Step.MAIN
+        game.state.players[0].mana_pool.add(Color.RED, 5)
+
+        hand = game.state.get_zone(0, Zone.HAND)
+        instant = next(c for c in hand if c.name == "Instant A")
+        sorcery = next(c for c in hand if c.name == "Sorcery B")
+
+        # Cast instant first — stack is now non-empty
+        game.cast_spell(0, instant.instance_id)
+        assert game.state.stack.size == 1
+
+        # Sorcery should fail because stack is non-empty
+        result = game.cast_spell(0, sorcery.instance_id)
+        assert result is False
+        assert sorcery.zone == Zone.HAND

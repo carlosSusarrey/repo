@@ -16,7 +16,8 @@ class Card:
     """A card definition (template, not an instance in a game)."""
 
     name: str
-    card_type: CardType
+    card_type: CardType = CardType.CREATURE  # Primary type (backwards compat)
+    card_types: list[CardType] = field(default_factory=list)  # All types (e.g., [ARTIFACT, CREATURE])
     cost: ManaCost = field(default_factory=lambda: ManaCost())
     supertypes: list[SuperType] = field(default_factory=list)
     subtypes: list[str] = field(default_factory=list)
@@ -30,25 +31,48 @@ class Card:
     activated_abilities: list[dict[str, Any]] = field(default_factory=list)
     keyword_params: dict[Keyword, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        """Ensure card_types list is synced with card_type."""
+        if not self.card_types:
+            self.card_types = [self.card_type]
+        elif self.card_type not in self.card_types:
+            self.card_type = self.card_types[0]
+
+    def has_type(self, card_type: CardType) -> bool:
+        """Check if this card has a given type (supports multi-type)."""
+        return card_type in self.card_types
+
     @property
     def colors(self) -> set[Color]:
         return self.cost.colors
 
     @property
     def is_creature(self) -> bool:
-        return self.card_type == CardType.CREATURE
+        return CardType.CREATURE in self.card_types
 
     @property
     def is_land(self) -> bool:
-        return self.card_type == CardType.LAND
+        return CardType.LAND in self.card_types
 
     @property
     def is_instant(self) -> bool:
-        return self.card_type == CardType.INSTANT
+        return CardType.INSTANT in self.card_types
 
     @property
     def is_sorcery(self) -> bool:
-        return self.card_type == CardType.SORCERY
+        return CardType.SORCERY in self.card_types
+
+    @property
+    def is_artifact(self) -> bool:
+        return CardType.ARTIFACT in self.card_types
+
+    @property
+    def is_enchantment(self) -> bool:
+        return CardType.ENCHANTMENT in self.card_types
+
+    @property
+    def is_battle(self) -> bool:
+        return CardType.BATTLE in self.card_types
 
     def has_keyword(self, keyword: Keyword) -> bool:
         return keyword in self.keywords
@@ -81,6 +105,8 @@ class CardInstance:
     # Temporary P/T modifications (until end of turn)
     temp_power_mod: int = 0
     temp_toughness_mod: int = 0
+    # Token tracking
+    is_token: bool = False
 
     @property
     def name(self) -> str:

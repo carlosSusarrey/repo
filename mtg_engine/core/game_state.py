@@ -154,6 +154,12 @@ class GameState:
                 player.lost = True
                 actions.append(f"{player.name} has lost (life <= 0)")
 
+        # CR 704.5c: Player with 10+ poison counters loses
+        for i, player in enumerate(self.players):
+            if player.poison_counters >= 10 and not player.lost:
+                player.lost = True
+                actions.append(f"{player.name} has lost (10+ poison counters)")
+
         # CR 704.5b: Creature with 0 or less toughness goes to graveyard
         # CR 704.5c: Creature with lethal damage goes to graveyard (if not indestructible)
         for card in self.get_battlefield():
@@ -204,13 +210,44 @@ class GameState:
                     del card.counters["-1/-1"]
                 actions.append(f"{card.name}: {cancel} +1/+1 and -1/-1 counters cancel")
 
-        # CR 704.5p: Aura not attached to legal object goes to graveyard
+        # CR 310.7 / CR 704.5s: Battle with 0 defense counters is exiled
+        for card in self.get_battlefield():
+            if card.card.card_type == CardType.BATTLE:
+                defense = card.counters.get("defense", 0)
+                if defense <= 0:
+                    self.move_card(card.instance_id, Zone.EXILE)
+                    actions.append(f"{card.name} exiled (0 defense counters)")
+
+        # CR 704.5d: Tokens not on the battlefield cease to exist
+        tokens_to_remove = [
+            card for card in self.cards
+            if card.is_token and card.zone != Zone.BATTLEFIELD
+        ]
+        for token in tokens_to_remove:
+            self.cards.remove(token)
+            actions.append(f"{token.name} token ceases to exist")
+
+        # CR 704.5m: Aura not attached to legal object goes to graveyard
+        # This includes auras whose enchanted permanent has protection from the aura
+        from mtg_engine.core.keywords import can_be_enchanted_or_equipped_by
         for card in self.get_battlefield():
             if "Aura" in card.card.subtypes and card.attached_to is not None:
                 target = self.find_card(card.attached_to)
                 if target is None or target.zone != Zone.BATTLEFIELD:
                     self.move_card(card.instance_id, Zone.GRAVEYARD)
                     actions.append(f"{card.name} goes to graveyard (no legal target)")
+                elif not can_be_enchanted_or_equipped_by(
+                    target.keywords,
+                    keyword_params=target.card.keyword_params,
+                    source_colors=card.card.colors,
+                    source_card_types=card.card.card_types,
+                ):
+                    from mtg_engine.core.equipment import detach
+                    detach(card, target)
+                    self.move_card(card.instance_id, Zone.GRAVEYARD)
+                    actions.append(
+                        f"{card.name} goes to graveyard (protection makes attachment illegal)"
+                    )
 
         # Check for game over
         alive_players = [i for i, p in enumerate(self.players) if not p.lost]

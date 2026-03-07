@@ -10,6 +10,22 @@ A Magic: The Gathering rules engine for designing and testing custom cards. Defi
 - **CLI**: Command-line interface for running simulations and testing cards
 - **Web UI**: Browser-based card designer and game simulator
 
+### Implemented Mechanics
+
+- **All 15 evergreen keywords**: flying, reach, first strike, double strike, deathtouch, trample, lifelink, vigilance, haste, hexproof, menace, defender, flash, indestructible, ward, protection
+- **Stack & spells**: cast_spell flow with mana payment, target validation (hexproof/shroud/protection/ward enforcement), LIFO resolution
+- **Triggered abilities**: ETB triggers with composable source filters, on-cast triggers, auto-stack placement
+- **Auras & Equipment**: attachment rules, aura falloff from protection (SBA), hexproof doesn't block non-cast attachment
+- **Face-down cards**: morph, disguise (with ward), cloak
+- **Transform / DFCs**: day/night, disturb, meld
+- **Adventure cards**: cast adventure half, exile, cast creature from exile
+- **Combat**: declare attackers/blockers, damage assignment, keyword interactions
+- **Format support**: Standard, Modern, Legacy, Vintage, Pioneer, Pauper, Commander (color identity, command zone)
+- **Tokens, multi-type cards, Kindred type, sideboard support**
+- **457 tests** covering all implemented features
+
+See [docs/GAP_ANALYSIS.md](docs/GAP_ANALYSIS.md) for the full roadmap and remaining work.
+
 ## Project Structure
 
 ```
@@ -18,8 +34,9 @@ mtg_engine/
   dsl/        # Card definition DSL parser and compiler
   cli/        # Command-line interface
   web/        # Flask web application
-tests/        # Test suite
+tests/        # Test suite (457 tests)
 cards/        # Card definition files (.mtg)
+docs/         # Gap analysis and implementation roadmap
 ```
 
 ## Quick Start

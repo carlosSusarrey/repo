@@ -20,6 +20,8 @@ class CardType(Enum):
     ARTIFACT = auto()
     PLANESWALKER = auto()
     LAND = auto()
+    BATTLE = auto()
+    KINDRED = auto()  # Formerly "Tribal" — lets non-creature spells have creature subtypes
 
 
 class SuperType(Enum):

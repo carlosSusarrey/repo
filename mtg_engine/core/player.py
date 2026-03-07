@@ -18,6 +18,7 @@ class Player:
     mana_pool: ManaPool = field(default_factory=ManaPool)
     has_drawn_for_turn: bool = False
     land_plays_remaining: int = 1
+    poison_counters: int = 0
     lost: bool = False
     won: bool = False
 

@@ -38,14 +38,61 @@ class TriggerEvent(Enum):
     LAND_ENTERS = auto()  # landfall
 
 
+# Relation keywords determine the relationship between the trigger source
+# and the event source (self, another, any, you).
+_RELATION_KEYWORDS = {"self", "another", "any", "you"}
+
+# Card type keywords filter by the event source's card type.
+# These correspond to permanent types in Magic.
+_CARD_TYPE_KEYWORDS = {
+    "creature", "artifact", "enchantment", "planeswalker",
+    "land", "battle", "kindred",
+}
+
+# Token status keywords filter by whether the event source is a token.
+_TOKEN_KEYWORDS = {"token", "nontoken"}
+
+# All recognized filter keywords.
+FILTER_KEYWORDS = _RELATION_KEYWORDS | _CARD_TYPE_KEYWORDS | _TOKEN_KEYWORDS
+
+
+def parse_source_filter(source: str | dict[str, Any]) -> dict[str, Any]:
+    """Normalize a source filter to a structured dict.
+
+    Accepts either:
+      - A legacy string like "self", "creature", "another"
+      - A structured dict with optional keys: relation, card_type, token
+
+    Returns a dict with optional keys:
+      - "relation": "self" | "another" | "any" | "you"
+      - "card_type": "creature" | "artifact" | "enchantment" | etc.
+      - "token": True (only tokens) | False (only non-tokens)
+    """
+    if isinstance(source, dict):
+        return source
+
+    # Legacy string — could be a single keyword
+    source = source.strip()
+    if source in _RELATION_KEYWORDS:
+        return {"relation": source}
+    if source in _CARD_TYPE_KEYWORDS:
+        return {"card_type": source}
+    if source == "token":
+        return {"token": True}
+    if source == "nontoken":
+        return {"token": False}
+    if source == "permanent":
+        return {"card_type": "permanent"}
+    # Unknown filter — treat as "any"
+    return {}
+
+
 @dataclass
 class TriggerCondition:
     """Defines when a triggered ability fires."""
 
     event: TriggerEvent
-    # Optional filter: e.g., "self" (this card), "you" (controller),
-    # "creature" (any creature), "nontoken" etc.
-    source_filter: str = "self"
+    source_filter: dict[str, Any] = field(default_factory=lambda: {"relation": "self"})
     # Additional conditions
     condition: dict[str, Any] | None = None
 
@@ -128,7 +175,8 @@ class TriggerManager:
                 if ability_event != event:
                     continue
 
-                source_filter = ability_def.get("source", "self")
+                source_raw = ability_def.get("source", "self")
+                source_filter = parse_source_filter(source_raw)
                 if not _matches_filter(source_filter, card, event_data):
                     continue
 
@@ -173,19 +221,75 @@ def _parse_trigger_event(name: str) -> TriggerEvent | None:
 
 
 def _matches_filter(
-    source_filter: str,
+    source_filter: dict[str, Any],
     card,
     event_data: dict[str, Any],
 ) -> bool:
-    """Check if a card matches the source filter for a trigger."""
-    if source_filter == "self":
-        return event_data.get("card_id") == card.instance_id
-    if source_filter == "any":
-        return True
-    if source_filter == "you":
-        return event_data.get("player_index") == card.controller_index
-    if source_filter == "creature":
-        from mtg_engine.core.enums import CardType
+    """Check if an event matches a structured source filter.
+
+    Each key in the filter dict is checked independently; all must pass.
+
+    Keys:
+      - "relation": relationship between trigger owner and event source
+          "self"    — event source is this card
+          "another" — event source is NOT this card
+          "any"     — always matches
+          "you"     — event was caused by this card's controller
+      - "card_type": event source must be this card type
+          "creature", "artifact", "enchantment", "planeswalker",
+          "land", "battle", "kindred"
+          "permanent" — any permanent type (not instant/sorcery)
+      - "token": True means only tokens, False means only non-tokens
+    """
+    from mtg_engine.core.enums import CardType
+
+    _CARD_TYPE_MAP = {
+        "creature": CardType.CREATURE,
+        "artifact": CardType.ARTIFACT,
+        "enchantment": CardType.ENCHANTMENT,
+        "planeswalker": CardType.PLANESWALKER,
+        "land": CardType.LAND,
+        "battle": CardType.BATTLE,
+        "kindred": CardType.KINDRED,
+    }
+
+    # Check relation
+    relation = source_filter.get("relation")
+    if relation == "self":
+        if event_data.get("card_id") != card.instance_id:
+            return False
+    elif relation == "another":
+        if event_data.get("card_id") == card.instance_id:
+            return False
+    elif relation == "you":
+        if event_data.get("player_index") != card.controller_index:
+            return False
+    # "any" or no relation — always passes
+
+    # Check card type
+    card_type_filter = source_filter.get("card_type")
+    if card_type_filter is not None:
         event_card = event_data.get("card")
-        return event_card and event_card.card.card_type == CardType.CREATURE
+        if event_card is None:
+            return False
+        if card_type_filter == "permanent":
+            if event_card.card.card_type in (CardType.INSTANT, CardType.SORCERY):
+                return False
+        else:
+            expected = _CARD_TYPE_MAP.get(card_type_filter)
+            if expected is not None and event_card.card.card_type != expected:
+                return False
+
+    # Check token status
+    token_filter = source_filter.get("token")
+    if token_filter is not None:
+        event_card = event_data.get("card")
+        if event_card is None:
+            return False
+        is_token = getattr(event_card, "is_token", False)
+        if token_filter and not is_token:
+            return False
+        if not token_filter and is_token:
+            return False
+
     return True

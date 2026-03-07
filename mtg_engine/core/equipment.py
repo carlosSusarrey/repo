@@ -40,10 +40,13 @@ def can_equip(equipment: CardInstance, target: CardInstance) -> bool:
 
 
 def can_enchant(aura: CardInstance, target: CardInstance) -> bool:
-    """Check if an aura can legally enchant a target.
+    """Check if an aura can legally be attached to a target.
 
-    CR 303.4a: Aura spell targets what it will enchant.
-    CR 303.4b: Aura on battlefield must be attached to legal object.
+    Only checks type-based restrictions (enchant creature, enchant land, etc.).
+    Does NOT check hexproof/shroud/ward/protection — those are targeting
+    restrictions enforced during casting, not attachment. An aura entering
+    the battlefield without being cast (e.g. reanimation) skips targeting
+    entirely and just needs a legal object to attach to (CR 303.4f).
     """
     if aura.zone != Zone.BATTLEFIELD and aura.zone != Zone.STACK:
         return False
@@ -67,22 +70,12 @@ def can_enchant(aura: CardInstance, target: CardInstance) -> bool:
     if enchant_type == "enchantment" and target.card.card_type != CardType.ENCHANTMENT:
         return False
 
-    # Check hexproof/shroud
-    if aura.controller_index != target.controller_index:
-        if target.has_keyword(Keyword.HEXPROOF) or target.has_keyword(Keyword.SHROUD):
-            return False
-    elif target.has_keyword(Keyword.SHROUD):
-        return False
-
     return True
 
 
 def _get_enchant_type(aura: CardInstance) -> str:
     """Determine what an aura can enchant based on its definition."""
-    # Check activated_abilities or keyword_params for enchant type
-    enchant_type = aura.card.keyword_params.get(Keyword.PROTECTION, None)
-
-    # Check subtypes for hints (e.g., "Aura" with enchant_target in effects)
+    # Check effects for explicit enchant type
     for effect in aura.card.effects:
         if effect.get("type") == "enchant":
             return effect.get("target_type", "permanent")
