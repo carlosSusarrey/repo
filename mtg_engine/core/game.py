@@ -186,6 +186,8 @@ class Game:
              "player_index": player_index},
             self.state.get_battlefield(),
         )
+        # Put any pending triggered abilities on the stack
+        self.put_triggers_on_stack()
 
         # Reset priority (action taken)
         self.state.reset_priority()
@@ -216,6 +218,8 @@ class Game:
 
         self._log(f"{item.card_name} resolves")
         self.state.check_state_based_actions()
+        # Put any pending triggered abilities on the stack
+        self.put_triggers_on_stack()
         self.state.reset_priority()
         return result
 

@@ -177,15 +177,44 @@ def _matches_filter(
     card,
     event_data: dict[str, Any],
 ) -> bool:
-    """Check if a card matches the source filter for a trigger."""
+    """Check if a card matches the source filter for a trigger.
+
+    Filters determine which events a triggered ability responds to:
+      - "self": only when this card is the event source
+      - "you": when the event is caused by this card's controller
+      - "any": any event matches
+      - "another": any event except from this card itself
+      - "creature": event source is a creature
+      - "artifact": event source is an artifact
+      - "enchantment": event source is an enchantment
+      - "permanent": event source is any permanent type
+      - "nontoken": event source is not a token
+    """
+    from mtg_engine.core.enums import CardType
+
     if source_filter == "self":
         return event_data.get("card_id") == card.instance_id
     if source_filter == "any":
         return True
     if source_filter == "you":
         return event_data.get("player_index") == card.controller_index
+    if source_filter == "another":
+        return event_data.get("card_id") != card.instance_id
     if source_filter == "creature":
-        from mtg_engine.core.enums import CardType
         event_card = event_data.get("card")
-        return event_card and event_card.card.card_type == CardType.CREATURE
+        return event_card is not None and event_card.card.card_type == CardType.CREATURE
+    if source_filter == "artifact":
+        event_card = event_data.get("card")
+        return event_card is not None and event_card.card.card_type == CardType.ARTIFACT
+    if source_filter == "enchantment":
+        event_card = event_data.get("card")
+        return event_card is not None and event_card.card.card_type == CardType.ENCHANTMENT
+    if source_filter == "permanent":
+        event_card = event_data.get("card")
+        if event_card is None:
+            return False
+        return event_card.card.card_type not in (CardType.INSTANT, CardType.SORCERY)
+    if source_filter == "nontoken":
+        event_card = event_data.get("card")
+        return event_card is not None and not getattr(event_card, "is_token", False)
     return True

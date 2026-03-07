@@ -438,8 +438,9 @@ class TestOnCastTriggers:
 
         game.cast_spell(0, bolt_ci.instance_id, targets=["Bob"])
 
-        # Cast trigger should be pending
-        assert game.state.triggers.has_pending
+        # Cast trigger should already be on the stack (auto-placed by cast_spell)
+        assert game.state.stack.size == 2  # Shock + trigger
+        assert game.state.stack.peek().card_name == "Cast Watcher trigger"
 
     def test_cast_trigger_goes_on_stack_and_resolves(self):
         """Triggered ability from cast should go on stack and resolve."""
@@ -470,10 +471,7 @@ class TestOnCastTriggers:
 
         game.cast_spell(0, bolt_ci.instance_id, targets=["Bob"])
 
-        # Put triggers on the stack
-        count = game.put_triggers_on_stack()
-        assert count == 1
-
+        # Triggers are auto-placed on the stack by cast_spell
         # Stack should have: [Shock, Soul Warden trigger]
         # Trigger is on top (LIFO), resolves first
         assert game.state.stack.size == 2
@@ -499,4 +497,239 @@ class TestOnCastTriggers:
         game.state.cards.append(bolt_ci)
 
         game.cast_spell(0, bolt_ci.instance_id, targets=["Bob"])
-        assert not game.state.triggers.has_pending
+        # Only the spell itself should be on the stack, no triggers
+        assert game.state.stack.size == 1
+
+
+class TestETBTriggersWithFilters:
+    """Verify ETB triggered abilities with source filters."""
+
+    def test_etb_self_trigger(self):
+        """A creature with 'when this enters the battlefield' should trigger on itself."""
+        game = _setup_game()
+        etb_card = Card(
+            name="Elvish Visionary", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{1}{G}"), power=1, toughness=1,
+            triggered_abilities=[{
+                "trigger": "enters_battlefield",
+                "source": "self",
+                "effects": [{"type": "draw", "amount": 1}],
+            }],
+        )
+        # Simulate casting: put on stack with enter_battlefield effect
+        ci = CardInstance(card=etb_card, zone=Zone.STACK,
+                          owner_index=0, controller_index=0)
+        game.state.cards.append(ci)
+
+        item = StackItem(
+            source_id=ci.instance_id,
+            controller_index=0,
+            card_name="Elvish Visionary",
+            effects=[{"type": "enter_battlefield"}],
+        )
+        game.state.stack.push(item)
+
+        library_before = len(game.state.get_zone(0, Zone.LIBRARY))
+        result = game.resolve_top_of_stack()
+
+        # Card should be on battlefield
+        assert ci.zone == Zone.BATTLEFIELD
+        # ETB trigger should have been placed on stack and needs resolving
+        assert game.state.stack.size == 1
+        assert game.state.stack.peek().card_name == "Elvish Visionary trigger"
+
+        # Resolve the trigger
+        game.resolve_top_of_stack()
+        assert len(game.state.get_zone(0, Zone.LIBRARY)) == library_before - 1
+
+    def test_etb_another_creature_trigger(self):
+        """A card watching for 'another creature enters' should not trigger on itself."""
+        game = _setup_game()
+
+        # Watcher on battlefield: triggers when ANOTHER creature enters
+        watcher_card = Card(
+            name="Soul Warden", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{W}"), power=1, toughness=1,
+            triggered_abilities=[{
+                "trigger": "enters_battlefield",
+                "source": "another",
+                "effects": [{"type": "gain_life", "amount": 1}],
+            }],
+        )
+        watcher = CardInstance(card=watcher_card, zone=Zone.BATTLEFIELD,
+                               owner_index=0, controller_index=0)
+        game.state.cards.append(watcher)
+
+        life_before = game.state.players[0].life
+
+        # Another creature enters the battlefield
+        bear_card = Card(
+            name="Grizzly Bears", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{1}{G}"), power=2, toughness=2,
+        )
+        bear = CardInstance(card=bear_card, zone=Zone.STACK,
+                            owner_index=0, controller_index=0)
+        game.state.cards.append(bear)
+
+        item = StackItem(
+            source_id=bear.instance_id,
+            controller_index=0,
+            card_name="Grizzly Bears",
+            effects=[{"type": "enter_battlefield"}],
+        )
+        game.state.stack.push(item)
+        game.resolve_top_of_stack()
+
+        # Trigger should be on the stack
+        assert game.state.stack.size == 1
+        game.resolve_top_of_stack()
+        assert game.state.players[0].life == life_before + 1
+
+    def test_etb_another_does_not_trigger_on_self(self):
+        """'Another' filter should not trigger when the watcher itself enters."""
+        game = _setup_game()
+
+        # The watcher enters the battlefield — should NOT trigger itself
+        watcher_card = Card(
+            name="Soul Warden", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{W}"), power=1, toughness=1,
+            triggered_abilities=[{
+                "trigger": "enters_battlefield",
+                "source": "another",
+                "effects": [{"type": "gain_life", "amount": 1}],
+            }],
+        )
+        watcher = CardInstance(card=watcher_card, zone=Zone.STACK,
+                               owner_index=0, controller_index=0)
+        game.state.cards.append(watcher)
+
+        life_before = game.state.players[0].life
+
+        item = StackItem(
+            source_id=watcher.instance_id,
+            controller_index=0,
+            card_name="Soul Warden",
+            effects=[{"type": "enter_battlefield"}],
+        )
+        game.state.stack.push(item)
+        game.resolve_top_of_stack()
+
+        # No trigger should have fired — "another" excludes self
+        assert game.state.stack.is_empty
+        assert game.state.players[0].life == life_before
+
+    def test_etb_creature_filter(self):
+        """'Creature' filter should trigger only for creatures, not artifacts."""
+        game = _setup_game()
+
+        watcher_card = Card(
+            name="Essence Warden", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{G}"), power=1, toughness=1,
+            triggered_abilities=[{
+                "trigger": "enters_battlefield",
+                "source": "creature",
+                "effects": [{"type": "gain_life", "amount": 1}],
+            }],
+        )
+        watcher = CardInstance(card=watcher_card, zone=Zone.BATTLEFIELD,
+                               owner_index=0, controller_index=0)
+        game.state.cards.append(watcher)
+
+        life_before = game.state.players[0].life
+
+        # An artifact enters — should NOT trigger
+        artifact_card = Card(
+            name="Sol Ring", card_type=CardType.ARTIFACT,
+            cost=ManaCost.parse("{1}"),
+        )
+        artifact = CardInstance(card=artifact_card, zone=Zone.STACK,
+                                owner_index=0, controller_index=0)
+        game.state.cards.append(artifact)
+
+        item = StackItem(
+            source_id=artifact.instance_id,
+            controller_index=0,
+            card_name="Sol Ring",
+            effects=[{"type": "enter_battlefield"}],
+        )
+        game.state.stack.push(item)
+        game.resolve_top_of_stack()
+
+        # No trigger — artifact is not a creature
+        assert game.state.stack.is_empty
+        assert game.state.players[0].life == life_before
+
+        # Now a creature enters — should trigger
+        bear_card = Card(
+            name="Grizzly Bears", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{1}{G}"), power=2, toughness=2,
+        )
+        bear = CardInstance(card=bear_card, zone=Zone.STACK,
+                            owner_index=0, controller_index=0)
+        game.state.cards.append(bear)
+
+        item2 = StackItem(
+            source_id=bear.instance_id,
+            controller_index=0,
+            card_name="Grizzly Bears",
+            effects=[{"type": "enter_battlefield"}],
+        )
+        game.state.stack.push(item2)
+        game.resolve_top_of_stack()
+
+        assert game.state.stack.size == 1
+        game.resolve_top_of_stack()
+        assert game.state.players[0].life == life_before + 1
+
+
+class TestDSLTriggeredAbilityFilters:
+    """Verify DSL parsing of triggered abilities with source filters."""
+
+    def test_parse_triggered_with_filter(self):
+        from mtg_engine.dsl.parser import parse_card
+        dsl = '''
+        card "Soul Warden" {
+            type: Creature
+            cost: {W}
+            p/t: 1 / 1
+            when(enters_battlefield, another): gain_life(1)
+        }
+        '''
+        cards = parse_card(dsl)
+        card = cards[0]
+        assert len(card.triggered_abilities) == 1
+        trigger = card.triggered_abilities[0]
+        assert trigger["trigger"] == "enters_battlefield"
+        assert trigger["source"] == "another"
+        assert trigger["effects"][0]["type"] == "gain_life"
+
+    def test_parse_triggered_without_filter_defaults_to_self(self):
+        from mtg_engine.dsl.parser import parse_card
+        dsl = '''
+        card "Wall of Omens" {
+            type: Creature
+            cost: {1}{W}
+            p/t: 0 / 4
+            when(enters_battlefield): draw(1)
+        }
+        '''
+        cards = parse_card(dsl)
+        card = cards[0]
+        trigger = card.triggered_abilities[0]
+        assert trigger["source"] == "self"
+
+    def test_parse_cast_trigger_with_you_filter(self):
+        from mtg_engine.dsl.parser import parse_card
+        dsl = '''
+        card "Beast Whisperer" {
+            type: Creature
+            cost: {2}{G}{G}
+            p/t: 2 / 3
+            when(cast, you): draw(1)
+        }
+        '''
+        cards = parse_card(dsl)
+        card = cards[0]
+        trigger = card.triggered_abilities[0]
+        assert trigger["trigger"] == "cast"
+        assert trigger["source"] == "you"

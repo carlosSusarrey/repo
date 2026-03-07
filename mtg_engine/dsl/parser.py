@@ -167,10 +167,17 @@ class CardTransformer(Transformer):
 
     def triggered_prop(self, items):
         trigger_event = str(items[0]).strip()
-        effect = items[1]
+        if len(items) == 3:
+            # when(event, source_filter): effect
+            source_filter = str(items[1]).strip()
+            effect = items[2]
+        else:
+            # when(event): effect — defaults to "self"
+            source_filter = "self"
+            effect = items[1]
         return {"triggered": {
             "trigger": trigger_event,
-            "source": "self",
+            "source": source_filter,
             "effects": [effect] if not isinstance(effect, list) else effect,
         }}
 
