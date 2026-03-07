@@ -22,6 +22,7 @@ from mtg_engine.core.keywords import (
 from mtg_engine.core.mana_abilities import can_tap_for_mana, tap_for_mana
 from mtg_engine.core.planeswalker import activate_loyalty, can_activate_loyalty
 from mtg_engine.core.player import Player
+from mtg_engine.core.replacement_effects import ReplacementType
 from mtg_engine.core.stack import Stack, StackItem
 from mtg_engine.core.triggers import TriggerEvent
 
@@ -87,6 +88,14 @@ class Game:
 
     def draw_card(self, player_index: int) -> CardInstance | None:
         """Draw a card for a player."""
+        # Check draw replacement effects
+        draw_event = {"player_index": player_index}
+        draw_result = self.state.replacement_effects.check_replacement(
+            ReplacementType.DRAW, draw_event)
+        if draw_result is None:
+            self._log(f"{self.state.players[player_index].name}'s draw prevented")
+            return None
+
         library = self.state.get_zone(player_index, Zone.LIBRARY)
         if not library:
             self.state.players[player_index].lost = True
@@ -339,12 +348,29 @@ class Game:
                 # Try as player
                 for i, player in enumerate(self.state.players):
                     if player.name == target_id:
-                        player.deal_damage(amount)
+                        dmg_event = {"amount": amount, "target": target_id,
+                                     "source_id": item.source_id, "is_combat": False}
+                        dmg_result = self.state.replacement_effects.check_replacement(
+                            ReplacementType.DAMAGE, dmg_event)
+                        if dmg_result is None:
+                            self._log(f"Damage to {player.name} prevented")
+                            continue
+                        actual = dmg_result.get("amount", amount)
+                        actual_target = dmg_result.get("target", target_id)
+                        # Handle redirect
+                        if actual_target != target_id:
+                            redirect_card = self.state.find_card(actual_target)
+                            if redirect_card and redirect_card.zone == Zone.BATTLEFIELD:
+                                redirect_card.damage_marked += actual
+                                result["success"] = True
+                                self._log(f"{item.card_name} deals {actual} damage to {redirect_card.name} (redirected)")
+                            continue
+                        player.deal_damage(actual)
                         result["success"] = True
-                        self._log(f"{item.card_name} deals {amount} damage to {player.name}")
+                        self._log(f"{item.card_name} deals {actual} damage to {player.name}")
                         if has_lifelink:
-                            self.state.players[item.controller_index].gain_life(amount)
-                            self._log(f"Lifelink: {self.state.players[item.controller_index].name} gains {amount} life")
+                            self.state.players[item.controller_index].gain_life(actual)
+                            self._log(f"Lifelink: {self.state.players[item.controller_index].name} gains {actual} life")
 
                 # Try as creature
                 target_card = self.state.find_card(target_id)
@@ -358,20 +384,40 @@ class Game:
                     ):
                         self._log(f"{target_card.name} has protection — damage prevented")
                         continue
-                    if has_deathtouch and amount > 0:
-                        target_card.damage_marked = target_card.current_toughness or amount
+                    dmg_event = {"amount": amount, "target": target_id,
+                                 "source_id": item.source_id, "is_combat": False}
+                    dmg_result = self.state.replacement_effects.check_replacement(
+                        ReplacementType.DAMAGE, dmg_event)
+                    if dmg_result is None:
+                        self._log(f"Damage to {target_card.name} prevented")
+                        continue
+                    actual = dmg_result.get("amount", amount)
+                    if has_deathtouch and actual > 0:
+                        target_card.damage_marked = target_card.current_toughness or actual
                     else:
-                        target_card.damage_marked += amount
+                        target_card.damage_marked += actual
                     result["success"] = True
-                    self._log(f"{item.card_name} deals {amount} damage to {target_card.name}")
+                    self._log(f"{item.card_name} deals {actual} damage to {target_card.name}")
                     if has_lifelink:
-                        self.state.players[item.controller_index].gain_life(amount)
+                        self.state.players[item.controller_index].gain_life(actual)
 
         elif effect_type == "destroy":
             for target_id in item.targets:
                 target_card = self.state.find_card(target_id)
                 if target_card and target_card.zone == Zone.BATTLEFIELD:
                     if not target_card.has_keyword(Keyword.INDESTRUCTIBLE):
+                        # Check die replacement ("if ~ would die, instead...")
+                        if target_card.card.is_creature:
+                            die_event = {"card_id": target_card.instance_id,
+                                         "card": target_card,
+                                         "player_index": target_card.controller_index,
+                                         "cause": "destroy"}
+                            die_result = self.state.replacement_effects.check_replacement(
+                                ReplacementType.DIE, die_event)
+                            if die_result is None:
+                                self._log(f"{target_card.name}'s death prevented")
+                                result["success"] = True
+                                continue
                         self.state.move_card(target_id, Zone.GRAVEYARD)
                         result["success"] = True
                         self._log(f"{item.card_name} destroys {target_card.name}")
@@ -394,7 +440,13 @@ class Game:
 
         elif effect_type == "gain_life":
             amount = effect.get("amount", 0)
-            self.state.players[item.controller_index].gain_life(amount)
+            life_event = {"amount": amount, "player_index": item.controller_index}
+            life_result = self.state.replacement_effects.check_replacement(
+                ReplacementType.LIFE_GAIN, life_event)
+            if life_result is not None:
+                actual = life_result.get("amount", amount)
+                if actual > 0:
+                    self.state.players[item.controller_index].gain_life(actual)
             result["success"] = True
 
         elif effect_type == "lose_life":
@@ -535,22 +587,47 @@ class Game:
                 source_card = self.state.find_card(item.source_id)
                 if source_card and source_card.zone == Zone.BATTLEFIELD:
                     is_creature = source_card.card.is_creature
-                    self.state.move_card(item.source_id, Zone.GRAVEYARD)
-                    result["success"] = True
-                    self._log(f"{source_card.name} is sacrificed")
+                    # Check die replacement for creatures being sacrificed
+                    death_prevented = False
                     if is_creature:
-                        self.state.triggers.check_triggers(
-                            TriggerEvent.DIES,
-                            {"card_id": source_card.instance_id, "card": source_card,
-                             "player_index": source_card.controller_index},
-                            self.state.get_battlefield(),
-                            self.state.get_zone(source_card.owner_index, Zone.GRAVEYARD),
-                        )
+                        die_event = {"card_id": source_card.instance_id,
+                                     "card": source_card,
+                                     "player_index": source_card.controller_index,
+                                     "cause": "sacrifice"}
+                        die_result = self.state.replacement_effects.check_replacement(
+                            ReplacementType.DIE, die_event)
+                        if die_result is None:
+                            self._log(f"{source_card.name}'s death prevented")
+                            death_prevented = True
+                    if not death_prevented:
+                        self.state.move_card(item.source_id, Zone.GRAVEYARD)
+                        self._log(f"{source_card.name} is sacrificed")
+                        if is_creature:
+                            self.state.triggers.check_triggers(
+                                TriggerEvent.DIES,
+                                {"card_id": source_card.instance_id, "card": source_card,
+                                 "player_index": source_card.controller_index},
+                                self.state.get_battlefield(),
+                                self.state.get_zone(source_card.owner_index, Zone.GRAVEYARD),
+                            )
+                    result["success"] = True
             else:
                 for target_id in item.targets:
                     target_card = self.state.find_card(target_id)
                     if target_card and target_card.zone == Zone.BATTLEFIELD:
                         is_creature = target_card.card.is_creature
+                        # Check die replacement for creatures being sacrificed
+                        if is_creature:
+                            die_event = {"card_id": target_card.instance_id,
+                                         "card": target_card,
+                                         "player_index": target_card.controller_index,
+                                         "cause": "sacrifice"}
+                            die_result = self.state.replacement_effects.check_replacement(
+                                ReplacementType.DIE, die_event)
+                            if die_result is None:
+                                self._log(f"{target_card.name}'s death prevented")
+                                result["success"] = True
+                                continue
                         self.state.move_card(target_id, Zone.GRAVEYARD)
                         result["success"] = True
                         self._log(f"{target_card.name} is sacrificed")

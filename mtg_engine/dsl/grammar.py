@@ -38,6 +38,7 @@ property: type_prop
         | disguise_prop
         | transform_prop
         | back_face_prop
+        | replacement_prop
 
 type_prop: "type:" CARD_TYPE+
 cost_prop: "cost:" mana_cost
@@ -62,6 +63,14 @@ morph_prop: "morph:" mana_cost
 disguise_prop: "disguise:" mana_cost
 transform_prop: "transform:" QUOTED_STRING
 back_face_prop: "back_face" "{" card_body "}"
+replacement_prop: "replace(" REPLACEMENT_TYPE "):" replacement_action
+               | "replace(" REPLACEMENT_TYPE "," REPLACEMENT_SCOPE "):" replacement_action
+replacement_action: "enter_tapped"                    -> repl_enter_tapped
+                  | "add_counters(" QUOTED_STRING "," NUMBER ")"  -> repl_add_counters
+                  | "prevent"                          -> repl_prevent
+                  | "prevent_damage(" NUMBER ")"       -> repl_prevent_damage
+                  | "prevent_damage"                   -> repl_prevent_damage_all
+                  | "double_life"                      -> repl_double_life
 
 adventure_body: adventure_property+
 adventure_property: type_prop
@@ -147,6 +156,8 @@ TRIGGER_EVENT: "enters_battlefield" | "leaves_battlefield" | "dies"
              | "attacks" | "blocks" | "deals_combat_damage_to_player"
              | "begin_upkeep" | "end_step" | "land_enters" | "cast"
              | "transforms" | "level_up"
+REPLACEMENT_TYPE: "enter_battlefield" | "die" | "damage" | "draw" | "life_gain" | "discard" | "zone_change"
+REPLACEMENT_SCOPE: "self" | "any"
 SOURCE_FILTER: "self" | "you" | "any" | "another"
              | "creature" | "artifact" | "enchantment" | "planeswalker"
              | "land" | "battle" | "kindred"

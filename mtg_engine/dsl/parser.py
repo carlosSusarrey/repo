@@ -70,6 +70,8 @@ class CardTransformer(Transformer):
             card.activated_abilities = props["activated_abilities"]
         if "keyword_params" in props:
             card.keyword_params = props["keyword_params"]
+        if "replacement_effects" in props and props["replacement_effects"]:
+            card.replacement_effects = props["replacement_effects"]
 
         return card
 
@@ -82,6 +84,7 @@ class CardTransformer(Transformer):
             "triggered_abilities": [],
             "activated_abilities": [],
             "keyword_params": {},
+            "replacement_effects": [],
         }
         for item in items:
             if isinstance(item, dict):
@@ -98,6 +101,8 @@ class CardTransformer(Transformer):
                         result["triggered_abilities"].append(value)
                     elif key == "activated":
                         result["activated_abilities"].append(value)
+                    elif key == "replacement":
+                        result["replacement_effects"].append(value)
                     elif key == "keyword_param":
                         kw, val = value
                         result["keyword_params"][kw] = val
@@ -213,6 +218,41 @@ class CardTransformer(Transformer):
             "is_loyalty": True,
             "effects": [effect] if not isinstance(effect, list) else effect,
         }}
+
+    def replacement_prop(self, items):
+        repl_type = str(items[0]).strip()
+        if len(items) == 3:
+            # replace(type, scope): action
+            scope = str(items[1]).strip()
+            action = items[2]
+        else:
+            # replace(type): action — defaults to "self"
+            scope = "self"
+            action = items[1]
+        action["type"] = repl_type
+        action["apply_to"] = scope
+        return {"replacement": action}
+
+    def repl_enter_tapped(self, items):
+        return {"action": "enter_tapped"}
+
+    def repl_add_counters(self, items):
+        counter_type = str(items[0]).strip('"')
+        count = int(items[1])
+        return {"action": "add_counters", "counter_type": counter_type, "count": count}
+
+    def repl_prevent(self, items):
+        return {"action": "prevent"}
+
+    def repl_prevent_damage(self, items):
+        amount = int(items[0])
+        return {"action": "prevent_damage", "amount": amount}
+
+    def repl_prevent_damage_all(self, items):
+        return {"action": "prevent_damage"}
+
+    def repl_double_life(self, items):
+        return {"action": "double_life"}
 
     def enchant_prop(self, items):
         enchant_type = str(items[0]).strip()
