@@ -23,7 +23,7 @@ from mtg_engine.core.mana_abilities import can_tap_for_mana, tap_for_mana
 from mtg_engine.core.planeswalker import activate_loyalty, can_activate_loyalty
 from mtg_engine.core.player import Player
 from mtg_engine.core.replacement_effects import ReplacementType
-from mtg_engine.core.stack import AbilityOnStack, Stack, StackItem
+from mtg_engine.core.stack import AbilityOnStack, Stackable, Stack
 from mtg_engine.core.triggers import TriggerEvent
 
 
@@ -345,7 +345,7 @@ class Game:
             count += 1
         return count
 
-    def _resolve_effect(self, effect: dict[str, Any], item: StackItem) -> dict[str, Any]:
+    def _resolve_effect(self, effect: dict[str, Any], item: Stackable) -> dict[str, Any]:
         """Resolve a single effect from a spell or ability."""
         effect_type = effect.get("type", "")
         result = {"type": effect_type, "success": False}
@@ -1039,14 +1039,14 @@ class Game:
             return False
 
         # Put ability on stack
-        stack_item = StackItem(
+        ability = AbilityOnStack(
             source_id=result["source_id"],
             controller_index=result["controller_index"],
             card_name=f"{result['card_name']} loyalty ability",
             effects=result["effects"],
             targets=targets or [],
         )
-        self.state.stack.push(stack_item)
+        self.state.stack.push(ability)
         self._log(f"{card.name} activates loyalty ability {ability_index}")
         self.state.reset_priority()
         return True

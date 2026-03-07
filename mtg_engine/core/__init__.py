@@ -6,7 +6,7 @@ from mtg_engine.core.keywords import Keyword
 from mtg_engine.core.card import Card, CardInstance
 from mtg_engine.core.player import Player
 from mtg_engine.core.game_state import GameState
-from mtg_engine.core.stack import AbilityOnStack, Stack, Stackable, StackItem
+from mtg_engine.core.stack import AbilityOnStack, Stack, Stackable
 from mtg_engine.core.combat import CombatState
 from mtg_engine.core.triggers import TriggerEvent, TriggerManager
 from mtg_engine.core.game import Game
@@ -39,7 +39,7 @@ __all__ = [
     "Card", "CardInstance",
     "Player",
     "GameState",
-    "AbilityOnStack", "Stack", "Stackable", "StackItem",
+    "AbilityOnStack", "Stack", "Stackable",
     "CombatState",
     "TriggerEvent", "TriggerManager",
     "Game",

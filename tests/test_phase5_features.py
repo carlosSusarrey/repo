@@ -7,7 +7,7 @@ from mtg_engine.core.enums import CardType, Color, Step, SuperType, Zone
 from mtg_engine.core.game import Game
 from mtg_engine.core.keywords import Keyword
 from mtg_engine.core.mana import ManaCost
-from mtg_engine.core.stack import StackItem
+from mtg_engine.core.stack import AbilityOnStack
 from mtg_engine.core.triggers import TriggerEvent
 
 
@@ -70,7 +70,7 @@ class TestDeathTriggers:
             instance_id="murder_1", owner_index=1, controller_index=1,
         )
         game.state.cards.append(spell_inst)
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="murder_1", controller_index=1,
             card_name="Murder", effects=[{"type": "destroy"}],
             targets=[ba_inst.instance_id],
@@ -169,7 +169,7 @@ class TestDeathTriggers:
             owner_index=0, controller_index=0,
         )
         # We need to use the creature as the source so sacrifice self works
-        item = StackItem(
+        item = AbilityOnStack(
             source_id=creature_inst.instance_id,
             controller_index=0, card_name="Sacrifice Spell",
             effects=[{"type": "sacrifice", "target": {"kind": "self"}}],
@@ -207,7 +207,7 @@ class TestDeathTriggers:
             instance_id="swords_1", owner_index=1, controller_index=1,
         )
         game.state.cards.append(spell_inst)
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="swords_1", controller_index=1,
             card_name="Swords to Plowshares",
             effects=[{"type": "exile"}],
@@ -256,7 +256,7 @@ class TestDeathTriggers:
             instance_id="murder_dual", owner_index=1, controller_index=1,
         )
         game.state.cards.append(spell_inst)
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="murder_dual", controller_index=1,
             card_name="Murder", effects=[{"type": "destroy"}],
             targets=[creature_inst.instance_id],
@@ -472,7 +472,7 @@ class TestTargetLegalityOnResolution:
             instance_id="bolt_1", owner_index=0, controller_index=0,
         )
         game.state.cards.append(bolt_inst)
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="bolt_1", controller_index=0,
             card_name="Lightning Bolt",
             effects=[{"type": "damage", "amount": 3}],
@@ -514,7 +514,7 @@ class TestTargetLegalityOnResolution:
             instance_id="multi_bolt", owner_index=0, controller_index=0,
         )
         game.state.cards.append(spell_inst)
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="multi_bolt", controller_index=0,
             card_name="Multi Bolt",
             effects=[{"type": "damage", "amount": 3}],
@@ -548,7 +548,7 @@ class TestTargetLegalityOnResolution:
             instance_id="lava_spike", owner_index=0, controller_index=0,
         )
         game.state.cards.append(bolt_inst)
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="lava_spike", controller_index=0,
             card_name="Lava Spike",
             effects=[{"type": "damage", "amount": 3}],
@@ -578,7 +578,7 @@ class TestTargetLegalityOnResolution:
             instance_id="lava_spike2", owner_index=0, controller_index=0,
         )
         game.state.cards.append(bolt_inst)
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="lava_spike2", controller_index=0,
             card_name="Lava Spike",
             effects=[{"type": "damage", "amount": 3}],
@@ -605,7 +605,7 @@ class TestTargetLegalityOnResolution:
             instance_id="divination_1", owner_index=0, controller_index=0,
         )
         game.state.cards.append(div_inst)
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="divination_1", controller_index=0,
             card_name="Divination",
             effects=[{"type": "draw", "amount": 2}],

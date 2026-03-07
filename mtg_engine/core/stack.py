@@ -45,9 +45,6 @@ class AbilityOnStack:
         return f"{self.card_name}{target_str}"
 
 
-# Backward-compat alias — tests that create StackItem get AbilityOnStack
-StackItem = AbilityOnStack
-
 
 class Stack:
     """The game stack - LIFO resolution of spells and abilities."""

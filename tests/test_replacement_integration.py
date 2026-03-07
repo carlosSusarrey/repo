@@ -22,7 +22,7 @@ from mtg_engine.core.replacement_effects import (
     create_life_gain_replacement,
     create_draw_replacement,
 )
-from mtg_engine.core.stack import StackItem
+from mtg_engine.core.stack import AbilityOnStack
 from mtg_engine.core.triggers import TriggerEvent
 
 
@@ -195,7 +195,7 @@ class TestDamagePrevention:
         )
         game.state.cards.append(bolt_inst)
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="bolt1", controller_index=1,
             card_name="Lightning Bolt",
             effects=[{"type": "damage", "amount": 3}],
@@ -215,7 +215,7 @@ class TestDamagePrevention:
         effect = create_prevention_effect("shield", prevent_amount=2)
         game.state.replacement_effects.add_effect(effect)
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="src", controller_index=1,
             card_name="Fireball",
             effects=[{"type": "damage", "amount": 5}],
@@ -237,7 +237,7 @@ class TestDamagePrevention:
         effect = create_prevention_effect("shield")
         game.state.replacement_effects.add_effect(effect)
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="src", controller_index=1,
             card_name="Shock",
             effects=[{"type": "damage", "amount": 2}],
@@ -267,7 +267,7 @@ class TestLifeGainReplacement:
         )
         game.state.replacement_effects.add_effect(effect)
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="src", controller_index=0,
             card_name="Healing Salve",
             effects=[{"type": "gain_life", "amount": 3}],
@@ -289,7 +289,7 @@ class TestLifeGainReplacement:
         )
         game.state.replacement_effects.add_effect(effect)
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="src", controller_index=0,
             card_name="Healing Salve",
             effects=[{"type": "gain_life", "amount": 5}],
@@ -319,7 +319,7 @@ class TestLifeGainReplacement:
         # So manually register.
         game.state._register_replacement_effects(game.state.find_card("doubler"))
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="src", controller_index=0,
             card_name="Healing Salve",
             effects=[{"type": "gain_life", "amount": 4}],
@@ -397,7 +397,7 @@ class TestDeathReplacement:
         )
         game.state.cards.append(destroy_inst)
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="murder1", controller_index=1,
             card_name="Murder",
             effects=[{"type": "destroy"}],
@@ -488,7 +488,7 @@ class TestDamageRedirect:
                                         condition=lambda e: e.get("target") == "Alice")
         game.state.replacement_effects.add_effect(effect)
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id="src", controller_index=1,
             card_name="Bolt",
             effects=[{"type": "damage", "amount": 3}],

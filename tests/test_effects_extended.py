@@ -11,7 +11,7 @@ from mtg_engine.core.enums import CardType, Color, Step, Zone
 from mtg_engine.core.game import Game
 from mtg_engine.core.keywords import Keyword
 from mtg_engine.core.mana import ManaCost
-from mtg_engine.core.stack import Stack, StackItem
+from mtg_engine.core.stack import Stack, AbilityOnStack
 
 
 def _simple_deck(n=20):
@@ -32,7 +32,7 @@ def _cast_and_resolve(game, card, effects, targets=None, controller=0):
     """Put a spell card on the stack and resolve it, returning the result.
 
     Creates a CardInstance for the card, puts it in the STACK zone,
-    pushes a StackItem with the given effects, then resolves via
+    pushes a AbilityOnStack with the given effects, then resolves via
     resolve_top_of_stack().
     """
     instance = CardInstance(
@@ -42,7 +42,7 @@ def _cast_and_resolve(game, card, effects, targets=None, controller=0):
     )
     game.state.cards.append(instance)
 
-    item = StackItem(
+    item = AbilityOnStack(
         source_id=instance.instance_id,
         controller_index=controller,
         card_name=card.name,
@@ -65,7 +65,7 @@ class TestCounterEffect:
                                      instance_id="target_spell", owner_index=1, controller_index=1)
         game.state.cards.append(bolt_instance)
 
-        target_item = StackItem(
+        target_item = AbilityOnStack(
             source_id="target_spell",
             controller_index=1,
             card_name="Lightning Bolt",
@@ -80,7 +80,7 @@ class TestCounterEffect:
                                         instance_id="counterspell", owner_index=0, controller_index=0)
         game.state.cards.append(counter_instance)
 
-        counter_item = StackItem(
+        counter_item = AbilityOnStack(
             source_id="counterspell",
             controller_index=0,
             card_name="Counterspell",
@@ -140,7 +140,7 @@ class TestPumpEffect:
 
         pump_effect = {"type": "pump", "target": {"kind": "self"}, "power": 2, "toughness": 2}
         # Source is the creature itself (activated ability style)
-        item = StackItem(
+        item = AbilityOnStack(
             source_id=creature.instance_id,
             controller_index=0,
             card_name="Self Pumper",
@@ -178,7 +178,7 @@ class TestAddCounterEffect:
 
         counter_effect = {"type": "add_counter", "target": {"kind": "self"}, "counter_type": "+1/+1", "amount": 1}
         # Self-targeting is an activated ability — test via _resolve_effect
-        item = StackItem(
+        item = AbilityOnStack(
             source_id=creature.instance_id,
             controller_index=0,
             card_name="Self Counter",
@@ -243,7 +243,7 @@ class TestSacrificeEffect:
 
         sac_effect = {"type": "sacrifice", "target": {"kind": "self"}}
         # Sacrifice self is an activated ability — test via _resolve_effect
-        item = StackItem(
+        item = AbilityOnStack(
             source_id=creature.instance_id,
             controller_index=0,
             card_name="Selfless Spirit",
@@ -316,8 +316,8 @@ class TestAddKeywordEffect:
 class TestStackRemoveBySource:
     def test_remove_by_source(self):
         stack = Stack()
-        item1 = StackItem(source_id="a", controller_index=0, card_name="A")
-        item2 = StackItem(source_id="b", controller_index=0, card_name="B")
+        item1 = AbilityOnStack(source_id="a", controller_index=0, card_name="A")
+        item2 = AbilityOnStack(source_id="b", controller_index=0, card_name="B")
         stack.push(item1)
         stack.push(item2)
 
@@ -388,7 +388,7 @@ class TestUnifiedStackResolution:
         creature.zone = Zone.BATTLEFIELD
 
         # Simulate an activated ability on the stack
-        ability_item = StackItem(
+        ability_item = AbilityOnStack(
             source_id=creature.instance_id,
             controller_index=0,
             card_name=f"{creature.name} ability",
@@ -521,7 +521,7 @@ class TestETBTriggersWithFilters:
                           owner_index=0, controller_index=0)
         game.state.cards.append(ci)
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id=ci.instance_id,
             controller_index=0,
             card_name="Elvish Visionary",
@@ -571,7 +571,7 @@ class TestETBTriggersWithFilters:
                             owner_index=0, controller_index=0)
         game.state.cards.append(bear)
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id=bear.instance_id,
             controller_index=0,
             card_name="Grizzly Bears",
@@ -605,7 +605,7 @@ class TestETBTriggersWithFilters:
 
         life_before = game.state.players[0].life
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id=watcher.instance_id,
             controller_index=0,
             card_name="Soul Warden",
@@ -646,7 +646,7 @@ class TestETBTriggersWithFilters:
                                 owner_index=0, controller_index=0)
         game.state.cards.append(artifact)
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id=artifact.instance_id,
             controller_index=0,
             card_name="Sol Ring",
@@ -668,7 +668,7 @@ class TestETBTriggersWithFilters:
                             owner_index=0, controller_index=0)
         game.state.cards.append(bear)
 
-        item2 = StackItem(
+        item2 = AbilityOnStack(
             source_id=bear.instance_id,
             controller_index=0,
             card_name="Grizzly Bears",
@@ -809,7 +809,7 @@ class TestComposableETBTriggers:
 
         library_before = len(game.state.get_zone(0, Zone.LIBRARY))
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id=bw.instance_id,
             controller_index=0,
             card_name="Beast Whisperer",
@@ -848,7 +848,7 @@ class TestComposableETBTriggers:
                             owner_index=0, controller_index=0)
         game.state.cards.append(bear)
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id=bear.instance_id,
             controller_index=0,
             card_name="Grizzly Bears",
@@ -885,7 +885,7 @@ class TestComposableETBTriggers:
                             owner_index=1, controller_index=1)
         game.state.cards.append(bear)
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id=bear.instance_id,
             controller_index=1,
             card_name="Grizzly Bears",
@@ -919,7 +919,7 @@ class TestComposableETBTriggers:
                                 owner_index=0, controller_index=0)
         game.state.cards.append(artifact)
 
-        item = StackItem(
+        item = AbilityOnStack(
             source_id=artifact.instance_id,
             controller_index=0,
             card_name="Sol Ring",

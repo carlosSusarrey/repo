@@ -108,7 +108,7 @@ class TestCastSpell:
         return game
 
     def test_cast_spell_puts_on_stack(self):
-        """Casting a spell should move it to the stack zone and push a StackItem."""
+        """Casting a spell should move it to the stack zone and push a AbilityOnStack."""
         game = self._make_game_with_spell(CardType.CREATURE, "{R}")
         hand = game.state.get_zone(0, Zone.HAND)
         spell = next(c for c in hand if c.name == "Test Spell")
