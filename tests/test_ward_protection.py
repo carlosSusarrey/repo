@@ -224,6 +224,76 @@ class TestProtectionEnchantEquip:
         )
 
 
+class TestAuraAttachmentBypassesTargeting:
+    """CR 303.4f: An aura put onto the battlefield without being cast
+    doesn't target — hexproof/shroud/ward don't prevent attachment."""
+
+    def test_aura_can_attach_to_hexproof_without_cast(self):
+        from mtg_engine.core.equipment import can_enchant
+        aura_card = Card(
+            name="Pacifism", card_type=CardType.ENCHANTMENT,
+            cost=ManaCost.parse("{1}{W}"), subtypes=["Aura"],
+            effects=[{"type": "enchant", "target_type": "creature"}],
+        )
+        aura = CardInstance(card=aura_card, zone=Zone.BATTLEFIELD, owner_index=0, controller_index=0)
+        creature = CardInstance(
+            card=Card(name="Troll", card_type=CardType.CREATURE, power=4, toughness=4,
+                      keywords={Keyword.HEXPROOF}),
+            zone=Zone.BATTLEFIELD, owner_index=1, controller_index=1,
+        )
+        # can_enchant only checks type legality, not targeting
+        assert can_enchant(aura, creature) is True
+
+    def test_aura_can_attach_to_shroud_without_cast(self):
+        from mtg_engine.core.equipment import can_enchant
+        aura_card = Card(
+            name="Pacifism", card_type=CardType.ENCHANTMENT,
+            cost=ManaCost.parse("{1}{W}"), subtypes=["Aura"],
+            effects=[{"type": "enchant", "target_type": "creature"}],
+        )
+        aura = CardInstance(card=aura_card, zone=Zone.BATTLEFIELD, owner_index=0, controller_index=0)
+        creature = CardInstance(
+            card=Card(name="Troll", card_type=CardType.CREATURE, power=4, toughness=4,
+                      keywords={Keyword.SHROUD}),
+            zone=Zone.BATTLEFIELD, owner_index=1, controller_index=1,
+        )
+        assert can_enchant(aura, creature) is True
+
+    def test_aura_falls_off_due_to_protection_sba(self):
+        """An aura can momentarily attach to a creature with protection,
+        but SBAs immediately move it to the graveyard."""
+        from mtg_engine.core.equipment import attach
+        from mtg_engine.core.game_state import GameState
+        from mtg_engine.core.player import Player
+
+        # White aura on a creature with protection from white
+        aura_card = Card(
+            name="Pacifism", card_type=CardType.ENCHANTMENT,
+            cost=ManaCost.parse("{1}{W}"), subtypes=["Aura"],
+            effects=[{"type": "enchant", "target_type": "creature"}],
+        )
+        aura = CardInstance(card=aura_card, zone=Zone.BATTLEFIELD, owner_index=0, controller_index=0)
+        creature = CardInstance(
+            card=Card(name="Knight", card_type=CardType.CREATURE, power=2, toughness=2,
+                      keywords={Keyword.PROTECTION},
+                      keyword_params={Keyword.PROTECTION: "white"},
+                      cost=ManaCost.parse("{W}")),
+            zone=Zone.BATTLEFIELD, owner_index=1, controller_index=1,
+        )
+
+        state = GameState(players=[Player("Alice"), Player("Bob")])
+        state.cards.extend([aura, creature])
+
+        # Attach succeeds (no targeting check)
+        attach(aura, creature)
+        assert aura.attached_to == creature.instance_id
+
+        # SBA detaches and moves aura to graveyard
+        actions = state.check_state_based_actions()
+        assert aura.zone == Zone.GRAVEYARD
+        assert any("protection" in a for a in actions)
+
+
 class TestManaCostAdd:
     def test_add_mana_costs(self):
         a = ManaCost.parse("{1}{R}")

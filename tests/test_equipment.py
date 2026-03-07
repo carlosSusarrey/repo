@@ -91,11 +91,17 @@ class TestCanEnchant:
         )
         assert can_enchant(aura, land) is False
 
-    def test_cant_enchant_hexproof_opponent(self):
+    def test_can_enchant_hexproof_opponent(self):
+        """can_enchant only checks type legality, not targeting restrictions.
+
+        Hexproof prevents targeting (checked during casting), but an aura
+        entering the battlefield without being cast can attach to anything
+        with a legal type (CR 303.4f).
+        """
         aura = _make_aura(enchant_type="creature", owner=0)
         creature = _make_creature(owner=1)
         creature.granted_keywords.add(Keyword.HEXPROOF)
-        assert can_enchant(aura, creature) is False
+        assert can_enchant(aura, creature) is True
 
     def test_can_enchant_own_hexproof(self):
         aura = _make_aura(enchant_type="creature", owner=0)

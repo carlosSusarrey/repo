@@ -227,13 +227,27 @@ class GameState:
             self.cards.remove(token)
             actions.append(f"{token.name} token ceases to exist")
 
-        # CR 704.5p: Aura not attached to legal object goes to graveyard
+        # CR 704.5m: Aura not attached to legal object goes to graveyard
+        # This includes auras whose enchanted permanent has protection from the aura
+        from mtg_engine.core.keywords import can_be_enchanted_or_equipped_by
         for card in self.get_battlefield():
             if "Aura" in card.card.subtypes and card.attached_to is not None:
                 target = self.find_card(card.attached_to)
                 if target is None or target.zone != Zone.BATTLEFIELD:
                     self.move_card(card.instance_id, Zone.GRAVEYARD)
                     actions.append(f"{card.name} goes to graveyard (no legal target)")
+                elif not can_be_enchanted_or_equipped_by(
+                    target.keywords,
+                    keyword_params=target.card.keyword_params,
+                    source_colors=card.card.colors,
+                    source_card_types=card.card.card_types,
+                ):
+                    from mtg_engine.core.equipment import detach
+                    detach(card, target)
+                    self.move_card(card.instance_id, Zone.GRAVEYARD)
+                    actions.append(
+                        f"{card.name} goes to graveyard (protection makes attachment illegal)"
+                    )
 
         # Check for game over
         alive_players = [i for i, p in enumerate(self.players) if not p.lost]
