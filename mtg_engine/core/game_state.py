@@ -92,8 +92,23 @@ class GameState:
                 return card
         return None
 
-    def move_card(self, instance_id: str, to_zone: Zone) -> CardInstance | None:
-        """Move a card to a different zone."""
+    def move_card(
+        self,
+        instance_id: str,
+        to_zone: Zone,
+        library_position: str | None = None,
+    ) -> CardInstance | None:
+        """Move a card to a different zone.
+
+        Args:
+            instance_id: The card to move.
+            to_zone: Destination zone.
+            library_position: When *to_zone* is ``Zone.LIBRARY``, indicates
+                ``"top"`` or ``"bottom"``.  Used to fire the correct
+                ``PUT_ON_TOP_LIBRARY`` / ``PUT_ON_BOTTOM_LIBRARY`` trigger.
+                ``None`` means the position is unspecified (e.g. shuffle into
+                library) — no library-position trigger fires.
+        """
         from mtg_engine.core.triggers import TriggerEvent
 
         card = self.find_card(instance_id)
@@ -147,6 +162,25 @@ class GameState:
             elif to_zone == Zone.EXILE:
                 self.triggers.check_triggers(
                     TriggerEvent.IS_EXILED,
+                    event_data,
+                    self.get_battlefield(),
+                    [card],
+                )
+            elif to_zone == Zone.HAND:
+                self.triggers.check_triggers(
+                    TriggerEvent.ENTERS_HAND,
+                    event_data,
+                    self.get_battlefield(),
+                    [card],
+                )
+            elif to_zone == Zone.LIBRARY and library_position is not None:
+                lib_event = (
+                    TriggerEvent.PUT_ON_TOP_LIBRARY
+                    if library_position == "top"
+                    else TriggerEvent.PUT_ON_BOTTOM_LIBRARY
+                )
+                self.triggers.check_triggers(
+                    lib_event,
                     event_data,
                     self.get_battlefield(),
                     [card],

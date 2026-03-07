@@ -143,6 +143,7 @@ KEYWORD_NAME: "flying" | "reach" | "first_strike" | "double_strike" | "deathtouc
             | "toxic" | "wither" | "infect" | "undying" | "persist"
 TRIGGER_EVENT: "enters_battlefield" | "leaves_battlefield" | "dies"
              | "enters_graveyard" | "is_exiled"
+             | "enters_hand" | "put_on_top" | "put_on_bottom"
              | "attacks" | "blocks" | "deals_combat_damage_to_player"
              | "begin_upkeep" | "end_step" | "land_enters" | "cast"
              | "transforms" | "level_up"

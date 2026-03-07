@@ -972,3 +972,275 @@ class TestDSLNewTriggerEvents:
         trig = card.triggered_abilities[0]
         assert trig["trigger"] == "is_exiled"
         assert trig["source"]["relation"] == "another"
+
+
+# ─── Enters-Hand Triggers ────────────────────────────────────────────────
+
+
+class TestEntersHandTriggers:
+    """Triggers for "when ~ is put into your hand from anywhere"."""
+
+    def test_enters_hand_from_library(self):
+        """Enters-hand fires when a card moves from library to hand (tutor)."""
+        game = _setup_game()
+
+        card_def = Card(
+            name="Tutor Target", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{2}{U}"), power=2, toughness=2,
+            triggered_abilities=[{
+                "trigger": "enters_hand",
+                "source": "self",
+                "effects": [{"type": "gain_life", "amount": 1}],
+            }],
+        )
+        inst = CardInstance(
+            card=card_def, zone=Zone.LIBRARY,
+            instance_id="tutor_target", owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(inst)
+
+        game.state.move_card(inst.instance_id, Zone.HAND)
+
+        assert inst.zone == Zone.HAND
+        pending = game.state.triggers.pending
+        hand_triggers = [p for p in pending
+                         if p.ability.trigger.event == TriggerEvent.ENTERS_HAND]
+        assert len(hand_triggers) == 1
+
+    def test_enters_hand_from_graveyard(self):
+        """Enters-hand fires when a card is returned from graveyard to hand."""
+        game = _setup_game()
+
+        card_def = Card(
+            name="Gravedigger Target", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{B}"), power=1, toughness=1,
+            triggered_abilities=[{
+                "trigger": "enters_hand",
+                "source": "self",
+                "effects": [{"type": "gain_life", "amount": 2}],
+            }],
+        )
+        inst = CardInstance(
+            card=card_def, zone=Zone.GRAVEYARD,
+            instance_id="gy_to_hand", owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(inst)
+
+        game.state.move_card(inst.instance_id, Zone.HAND)
+
+        assert inst.zone == Zone.HAND
+        pending = game.state.triggers.pending
+        hand_triggers = [p for p in pending
+                         if p.ability.trigger.event == TriggerEvent.ENTERS_HAND]
+        assert len(hand_triggers) == 1
+
+    def test_enters_hand_does_not_fire_on_battlefield(self):
+        """Enters-hand does NOT fire when a card enters the battlefield."""
+        game = _setup_game()
+
+        card_def = Card(
+            name="Hand Only", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{G}"), power=1, toughness=1,
+            triggered_abilities=[{
+                "trigger": "enters_hand",
+                "source": "self",
+                "effects": [{"type": "draw", "amount": 1}],
+            }],
+        )
+        inst = CardInstance(
+            card=card_def, zone=Zone.LIBRARY,
+            instance_id="hand_only", owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(inst)
+
+        game.state.move_card(inst.instance_id, Zone.BATTLEFIELD)
+
+        pending = game.state.triggers.pending
+        hand_triggers = [p for p in pending
+                         if p.ability.trigger.event == TriggerEvent.ENTERS_HAND]
+        assert len(hand_triggers) == 0
+
+    def test_watcher_sees_enters_hand(self):
+        """A battlefield card triggers when another card enters a player's hand."""
+        game = _setup_game()
+
+        watcher = Card(
+            name="Hand Watcher", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{1}{U}"), power=1, toughness=3,
+            triggered_abilities=[{
+                "trigger": "enters_hand",
+                "source": {"relation": "another"},
+                "effects": [{"type": "gain_life", "amount": 1}],
+            }],
+        )
+        _place_on_battlefield(game, watcher, controller=0)
+
+        target = Card(
+            name="Bounced", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{R}"), power=1, toughness=1,
+        )
+        target_inst = _place_on_battlefield(game, target, controller=1, instance_id="bounced")
+
+        game.state.move_card(target_inst.instance_id, Zone.HAND)
+
+        pending = game.state.triggers.pending
+        hand_triggers = [p for p in pending
+                         if p.ability.trigger.event == TriggerEvent.ENTERS_HAND]
+        assert len(hand_triggers) >= 1
+
+
+# ─── Put on Library Triggers ─────────────────────────────────────────────
+
+
+class TestPutOnLibraryTriggers:
+    """Triggers for 'when ~ is put on top/bottom of library'."""
+
+    def test_put_on_top_of_library(self):
+        """Put-on-top fires when a card is placed on top of library."""
+        game = _setup_game()
+
+        card_def = Card(
+            name="Top Deck", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{2}"), power=2, toughness=2,
+            triggered_abilities=[{
+                "trigger": "put_on_top",
+                "source": "self",
+                "effects": [{"type": "gain_life", "amount": 1}],
+            }],
+        )
+        inst = _place_on_battlefield(game, card_def, controller=0, instance_id="top_deck")
+
+        game.state.move_card(inst.instance_id, Zone.LIBRARY, library_position="top")
+
+        assert inst.zone == Zone.LIBRARY
+        pending = game.state.triggers.pending
+        top_triggers = [p for p in pending
+                        if p.ability.trigger.event == TriggerEvent.PUT_ON_TOP_LIBRARY]
+        assert len(top_triggers) == 1
+
+    def test_put_on_bottom_of_library(self):
+        """Put-on-bottom fires when a card is placed on bottom of library."""
+        game = _setup_game()
+
+        card_def = Card(
+            name="Bottom Deck", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{2}"), power=2, toughness=2,
+            triggered_abilities=[{
+                "trigger": "put_on_bottom",
+                "source": "self",
+                "effects": [{"type": "gain_life", "amount": 2}],
+            }],
+        )
+        inst = _place_on_battlefield(game, card_def, controller=0, instance_id="bottom_deck")
+
+        game.state.move_card(inst.instance_id, Zone.LIBRARY, library_position="bottom")
+
+        assert inst.zone == Zone.LIBRARY
+        pending = game.state.triggers.pending
+        bottom_triggers = [p for p in pending
+                           if p.ability.trigger.event == TriggerEvent.PUT_ON_BOTTOM_LIBRARY]
+        assert len(bottom_triggers) == 1
+
+    def test_no_library_trigger_without_position(self):
+        """No library trigger fires when position is unspecified (shuffle into library)."""
+        game = _setup_game()
+
+        card_def = Card(
+            name="Shuffled In", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{1}"), power=1, toughness=1,
+            triggered_abilities=[
+                {
+                    "trigger": "put_on_top",
+                    "source": "self",
+                    "effects": [{"type": "draw", "amount": 1}],
+                },
+                {
+                    "trigger": "put_on_bottom",
+                    "source": "self",
+                    "effects": [{"type": "draw", "amount": 1}],
+                },
+            ],
+        )
+        inst = _place_on_battlefield(game, card_def, controller=0, instance_id="shuffled")
+
+        # No library_position — e.g. "shuffle into library"
+        game.state.move_card(inst.instance_id, Zone.LIBRARY)
+
+        pending = game.state.triggers.pending
+        lib_triggers = [p for p in pending
+                        if p.ability.trigger.event in (
+                            TriggerEvent.PUT_ON_TOP_LIBRARY,
+                            TriggerEvent.PUT_ON_BOTTOM_LIBRARY,
+                        )]
+        assert len(lib_triggers) == 0
+
+    def test_top_does_not_fire_bottom(self):
+        """Put-on-top does NOT fire put-on-bottom triggers and vice versa."""
+        game = _setup_game()
+
+        card_def = Card(
+            name="Wrong Trigger", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{1}"), power=1, toughness=1,
+            triggered_abilities=[{
+                "trigger": "put_on_bottom",
+                "source": "self",
+                "effects": [{"type": "draw", "amount": 1}],
+            }],
+        )
+        inst = _place_on_battlefield(game, card_def, controller=0, instance_id="wrong_trig")
+
+        game.state.move_card(inst.instance_id, Zone.LIBRARY, library_position="top")
+
+        pending = game.state.triggers.pending
+        bottom_triggers = [p for p in pending
+                           if p.ability.trigger.event == TriggerEvent.PUT_ON_BOTTOM_LIBRARY]
+        assert len(bottom_triggers) == 0
+
+
+# ─── DSL Parsing for Hand/Library Triggers ────────────────────────────────
+
+
+class TestDSLHandLibraryTriggers:
+    """Test DSL grammar parsing for enters_hand, put_on_top, put_on_bottom."""
+
+    def test_parse_enters_hand(self):
+        from mtg_engine.dsl.parser import parse_card
+        cards = parse_card('''
+            card "Hand Returner" {
+                type: Creature
+                cost: {U}
+                p/t: 1 / 1
+                when(enters_hand): draw(1)
+            }
+        ''')
+        assert len(cards) == 1
+        trig = cards[0].triggered_abilities[0]
+        assert trig["trigger"] == "enters_hand"
+
+    def test_parse_put_on_top(self):
+        from mtg_engine.dsl.parser import parse_card
+        cards = parse_card('''
+            card "Top Decker" {
+                type: Creature
+                cost: {1}{U}
+                p/t: 2 / 1
+                when(put_on_top): gain_life(1)
+            }
+        ''')
+        trig = cards[0].triggered_abilities[0]
+        assert trig["trigger"] == "put_on_top"
+
+    def test_parse_put_on_bottom(self):
+        from mtg_engine.dsl.parser import parse_card
+        cards = parse_card('''
+            card "Bottom Feeder" {
+                type: Creature
+                cost: {G}
+                p/t: 1 / 1
+                when(put_on_bottom, another creature): gain_life(2)
+            }
+        ''')
+        trig = cards[0].triggered_abilities[0]
+        assert trig["trigger"] == "put_on_bottom"
+        assert trig["source"]["relation"] == "another"
+        assert trig["source"]["card_type"] == "creature"

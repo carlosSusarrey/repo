@@ -19,6 +19,9 @@ class TriggerEvent(Enum):
     DIES = auto()  # creature goes from battlefield to graveyard
     ENTERS_GRAVEYARD = auto()  # card goes to graveyard from any zone
     IS_EXILED = auto()  # card is exiled from any zone
+    ENTERS_HAND = auto()  # card is put into hand from any zone
+    PUT_ON_TOP_LIBRARY = auto()  # card is put on top of library
+    PUT_ON_BOTTOM_LIBRARY = auto()  # card is put on bottom of library
     CAST = auto()  # a spell is cast
 
     # Combat triggers
@@ -148,6 +151,9 @@ class TriggerManager:
         TriggerEvent.LEAVES_BATTLEFIELD,
         TriggerEvent.ENTERS_GRAVEYARD,
         TriggerEvent.IS_EXILED,
+        TriggerEvent.ENTERS_HAND,
+        TriggerEvent.PUT_ON_TOP_LIBRARY,
+        TriggerEvent.PUT_ON_BOTTOM_LIBRARY,
     })
 
     def check_triggers(
@@ -218,6 +224,9 @@ def _parse_trigger_event(name: str) -> TriggerEvent | None:
         "dies": TriggerEvent.DIES,
         "enters_graveyard": TriggerEvent.ENTERS_GRAVEYARD,
         "is_exiled": TriggerEvent.IS_EXILED,
+        "enters_hand": TriggerEvent.ENTERS_HAND,
+        "put_on_top": TriggerEvent.PUT_ON_TOP_LIBRARY,
+        "put_on_bottom": TriggerEvent.PUT_ON_BOTTOM_LIBRARY,
         "cast": TriggerEvent.CAST,
         "attacks": TriggerEvent.ATTACKS,
         "blocks": TriggerEvent.BLOCKS,
