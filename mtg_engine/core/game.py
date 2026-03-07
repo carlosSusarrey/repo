@@ -241,12 +241,48 @@ class Game:
         All stack items resolve uniformly: iterate effects and resolve each one.
         The stack does not differentiate between spells and abilities.
         After effects resolve, instant/sorcery source cards go to graveyard.
+
+        CR 608.2b: If all targets of a spell are illegal on resolution, the
+        spell is countered by the game rules (fizzles).
         """
         item = self.state.stack.pop()
         if item is None:
             return None
 
         result = {"card_name": item.card_name, "effects_resolved": []}
+
+        # CR 608.2b: Check target legality on resolution
+        if item.targets:
+            legal_targets = []
+            for target_id in item.targets:
+                # Check if target is a player
+                is_player = any(p.name == target_id for p in self.state.players)
+                if is_player:
+                    # Player targets are legal if the player hasn't lost
+                    player_alive = any(
+                        p.name == target_id and not p.lost
+                        for p in self.state.players
+                    )
+                    if player_alive:
+                        legal_targets.append(target_id)
+                else:
+                    # Card targets: check if still on the battlefield (or stack for counter spells)
+                    target_card = self.state.find_card(target_id)
+                    if target_card and target_card.zone in (Zone.BATTLEFIELD, Zone.STACK):
+                        legal_targets.append(target_id)
+
+            if not legal_targets:
+                # All targets illegal — spell/ability is countered (fizzles)
+                card = self.state.find_card(item.source_id)
+                if card and card.card.card_type in (CardType.INSTANT, CardType.SORCERY):
+                    card.zone = Zone.GRAVEYARD
+                self._log(f"{item.card_name} fizzles (all targets illegal)")
+                result["fizzled"] = True
+                self.state.reset_priority()
+                return result
+
+            # Update targets to only legal ones
+            item.targets = legal_targets
 
         # Resolve all effects on the stack item
         for effect in item.effects:
@@ -498,16 +534,34 @@ class Game:
             if target_info.get("kind") == "self":
                 source_card = self.state.find_card(item.source_id)
                 if source_card and source_card.zone == Zone.BATTLEFIELD:
+                    is_creature = source_card.card.is_creature
                     self.state.move_card(item.source_id, Zone.GRAVEYARD)
                     result["success"] = True
                     self._log(f"{source_card.name} is sacrificed")
+                    if is_creature:
+                        self.state.triggers.check_triggers(
+                            TriggerEvent.DIES,
+                            {"card_id": source_card.instance_id, "card": source_card,
+                             "player_index": source_card.controller_index},
+                            self.state.get_battlefield(),
+                            self.state.get_zone(source_card.owner_index, Zone.GRAVEYARD),
+                        )
             else:
                 for target_id in item.targets:
                     target_card = self.state.find_card(target_id)
                     if target_card and target_card.zone == Zone.BATTLEFIELD:
+                        is_creature = target_card.card.is_creature
                         self.state.move_card(target_id, Zone.GRAVEYARD)
                         result["success"] = True
                         self._log(f"{target_card.name} is sacrificed")
+                        if is_creature:
+                            self.state.triggers.check_triggers(
+                                TriggerEvent.DIES,
+                                {"card_id": target_card.instance_id, "card": target_card,
+                                 "player_index": target_card.controller_index},
+                                self.state.get_battlefield(),
+                                self.state.get_zone(target_card.owner_index, Zone.GRAVEYARD),
+                            )
 
         elif effect_type == "create_token":
             token_name = effect.get("name", "Token")

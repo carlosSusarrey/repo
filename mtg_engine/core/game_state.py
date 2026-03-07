@@ -94,6 +94,8 @@ class GameState:
 
     def move_card(self, instance_id: str, to_zone: Zone) -> CardInstance | None:
         """Move a card to a different zone."""
+        from mtg_engine.core.triggers import TriggerEvent
+
         card = self.find_card(instance_id)
         if card:
             old_zone = card.zone
@@ -119,6 +121,15 @@ class GameState:
                     self._handle_leaving_battlefield(card)
                     # Remove continuous effects from this source
                     self.continuous_effects.remove_effects_from(instance_id)
+                    # Fire LEAVES_BATTLEFIELD triggers
+                    # Pass the card that just left so its own LTB triggers can fire
+                    self.triggers.check_triggers(
+                        TriggerEvent.LEAVES_BATTLEFIELD,
+                        {"card_id": card.instance_id, "card": card,
+                         "player_index": card.controller_index},
+                        self.get_battlefield(),
+                        [card],
+                    )
         return card
 
     def _handle_leaving_battlefield(self, card: CardInstance) -> None:
@@ -146,7 +157,11 @@ class GameState:
 
     def check_state_based_actions(self) -> list[str]:
         """Check and apply state-based actions. Returns descriptions of actions taken."""
+        from mtg_engine.core.triggers import TriggerEvent
+
         actions = []
+        # Track creatures that die during SBAs so we can fire DIES triggers
+        died_creatures: list[CardInstance] = []
 
         # CR 704.5a: Player with 0 or less life loses
         for i, player in enumerate(self.players):
@@ -167,10 +182,12 @@ class GameState:
                 if card.current_toughness is not None and card.current_toughness <= 0:
                     self.move_card(card.instance_id, Zone.GRAVEYARD)
                     actions.append(f"{card.name} dies (toughness <= 0)")
+                    died_creatures.append(card)
                 elif card.lethal_damage:
                     if not card.has_keyword(Keyword.INDESTRUCTIBLE):
                         self.move_card(card.instance_id, Zone.GRAVEYARD)
                         actions.append(f"{card.name} dies (lethal damage)")
+                        died_creatures.append(card)
 
         # CR 704.5i: Planeswalker with 0 loyalty goes to graveyard
         for card in self.get_battlefield():
@@ -195,6 +212,8 @@ class GameState:
                 for card in to_remove:
                     self.move_card(card.instance_id, Zone.GRAVEYARD)
                     actions.append(f"{card.name} goes to graveyard (legend rule)")
+                    if card.card.is_creature:
+                        died_creatures.append(card)
 
         # CR 704.5n: +1/+1 and -1/-1 counters cancel out
         for card in self.get_battlefield():
@@ -248,6 +267,17 @@ class GameState:
                     actions.append(
                         f"{card.name} goes to graveyard (protection makes attachment illegal)"
                     )
+
+        # Fire DIES triggers for all creatures that died during SBAs
+        for card in died_creatures:
+            graveyard = self.get_zone(card.owner_index, Zone.GRAVEYARD)
+            self.triggers.check_triggers(
+                TriggerEvent.DIES,
+                {"card_id": card.instance_id, "card": card,
+                 "player_index": card.controller_index},
+                self.get_battlefield(),
+                graveyard,
+            )
 
         # Check for game over
         alive_players = [i for i, p in enumerate(self.players) if not p.lost]

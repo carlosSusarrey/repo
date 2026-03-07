@@ -164,7 +164,8 @@ class TriggerManager:
         cards_to_check = list(battlefield_cards)
 
         # For death triggers, also check the card that just died
-        if event == TriggerEvent.DIES and graveyard_cards:
+        # For LTB triggers, also check graveyard cards (the card that just left)
+        if event in (TriggerEvent.DIES, TriggerEvent.LEAVES_BATTLEFIELD) and graveyard_cards:
             cards_to_check.extend(graveyard_cards)
 
         for card in cards_to_check:
