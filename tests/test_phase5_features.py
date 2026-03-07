@@ -222,6 +222,58 @@ class TestDeathTriggers:
         dies_triggers = [p for p in pending if p.ability.trigger.event == TriggerEvent.DIES]
         assert len(dies_triggers) == 0
 
+    def test_dying_fires_both_dies_and_ltb(self):
+        """When a creature dies (battlefield→graveyard), both DIES and LTB triggers fire."""
+        game = _setup_game()
+        game.state.step = Step.MAIN
+
+        creature = Card(
+            name="Dual Trigger", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{B}"), power=1, toughness=1,
+            triggered_abilities=[
+                {
+                    "trigger": "dies",
+                    "source": "self",
+                    "effects": [{"type": "gain_life", "amount": 1}],
+                },
+                {
+                    "trigger": "leaves_battlefield",
+                    "source": "self",
+                    "effects": [{"type": "draw", "amount": 1}],
+                },
+            ],
+        )
+        creature_inst = _place_on_battlefield(game, creature, controller=0)
+
+        # Destroy it via a spell
+        destroy_spell = Card(
+            name="Murder", card_type=CardType.INSTANT,
+            cost=ManaCost.parse("{1}{B}{B}"),
+            effects=[{"type": "destroy"}],
+        )
+        spell_inst = CardInstance(
+            card=destroy_spell, zone=Zone.STACK,
+            instance_id="murder_dual", owner_index=1, controller_index=1,
+        )
+        game.state.cards.append(spell_inst)
+        item = StackItem(
+            source_id="murder_dual", controller_index=1,
+            card_name="Murder", effects=[{"type": "destroy"}],
+            targets=[creature_inst.instance_id],
+        )
+        game.state.stack.push(item)
+        game.resolve_top_of_stack()
+
+        assert creature_inst.zone == Zone.GRAVEYARD
+
+        # Both triggers should be on the stack
+        trigger_names = []
+        while not game.state.stack.is_empty:
+            ti = game.state.stack.pop()
+            trigger_names.append(ti.card_name)
+
+        assert len(trigger_names) >= 2, f"Expected 2 triggers, got {trigger_names}"
+
 
 # ─── Leaves-the-Battlefield Triggers ──────────────────────────────────────
 
