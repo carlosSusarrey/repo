@@ -780,3 +780,154 @@ class TestDSLTriggeredAbilityFilters:
         cards = parse_card(dsl)
         trigger = cards[0].triggered_abilities[0]
         assert trigger["source"] == {"token": True}
+
+
+class TestComposableETBTriggers:
+    """Test a creature with 'whenever a creature enters the battlefield
+    under your control, draw a card' using composable filters."""
+
+    def _make_beast_whisperer(self):
+        """Create a Beast Whisperer-style creature: you creature ETB → draw."""
+        return Card(
+            name="Beast Whisperer", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{2}{G}{G}"), power=2, toughness=3,
+            triggered_abilities=[{
+                "trigger": "enters_battlefield",
+                "source": {"relation": "you", "card_type": "creature"},
+                "effects": [{"type": "draw", "amount": 1}],
+            }],
+        )
+
+    def test_triggers_when_itself_enters(self):
+        """Beast Whisperer is a creature entering under your control,
+        so it should trigger its own ability when it enters."""
+        game = _setup_game()
+        bw_card = self._make_beast_whisperer()
+        bw = CardInstance(card=bw_card, zone=Zone.STACK,
+                          owner_index=0, controller_index=0)
+        game.state.cards.append(bw)
+
+        library_before = len(game.state.get_zone(0, Zone.LIBRARY))
+
+        item = StackItem(
+            source_id=bw.instance_id,
+            controller_index=0,
+            card_name="Beast Whisperer",
+            effects=[{"type": "enter_battlefield"}],
+        )
+        game.state.stack.push(item)
+        game.resolve_top_of_stack()
+
+        # Beast Whisperer is on the battlefield
+        assert bw.zone == Zone.BATTLEFIELD
+        # Its ETB trigger should be on the stack
+        assert game.state.stack.size == 1
+        assert game.state.stack.peek().card_name == "Beast Whisperer trigger"
+
+        # Resolve the draw trigger
+        game.resolve_top_of_stack()
+        assert len(game.state.get_zone(0, Zone.LIBRARY)) == library_before - 1
+
+    def test_triggers_when_same_controller_plays_another_creature(self):
+        """When the same player plays a second creature, Beast Whisperer
+        should trigger again and draw another card."""
+        game = _setup_game()
+        bw_card = self._make_beast_whisperer()
+        bw = CardInstance(card=bw_card, zone=Zone.BATTLEFIELD,
+                          owner_index=0, controller_index=0)
+        game.state.cards.append(bw)
+
+        library_before = len(game.state.get_zone(0, Zone.LIBRARY))
+
+        # Player 0 plays a second creature
+        bear_card = Card(
+            name="Grizzly Bears", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{1}{G}"), power=2, toughness=2,
+        )
+        bear = CardInstance(card=bear_card, zone=Zone.STACK,
+                            owner_index=0, controller_index=0)
+        game.state.cards.append(bear)
+
+        item = StackItem(
+            source_id=bear.instance_id,
+            controller_index=0,
+            card_name="Grizzly Bears",
+            effects=[{"type": "enter_battlefield"}],
+        )
+        game.state.stack.push(item)
+        game.resolve_top_of_stack()
+
+        # Trigger should be on the stack
+        assert game.state.stack.size == 1
+        assert game.state.stack.peek().card_name == "Beast Whisperer trigger"
+
+        # Resolve the draw trigger
+        game.resolve_top_of_stack()
+        assert len(game.state.get_zone(0, Zone.LIBRARY)) == library_before - 1
+
+    def test_does_not_trigger_for_opponents_creature(self):
+        """When an opponent (player 1) plays a creature, Beast Whisperer
+        controlled by player 0 should NOT trigger."""
+        game = _setup_game()
+        bw_card = self._make_beast_whisperer()
+        bw = CardInstance(card=bw_card, zone=Zone.BATTLEFIELD,
+                          owner_index=0, controller_index=0)
+        game.state.cards.append(bw)
+
+        library_before = len(game.state.get_zone(0, Zone.LIBRARY))
+
+        # Player 1 (opponent) plays a creature
+        bear_card = Card(
+            name="Grizzly Bears", card_type=CardType.CREATURE,
+            cost=ManaCost.parse("{1}{G}"), power=2, toughness=2,
+        )
+        bear = CardInstance(card=bear_card, zone=Zone.STACK,
+                            owner_index=1, controller_index=1)
+        game.state.cards.append(bear)
+
+        item = StackItem(
+            source_id=bear.instance_id,
+            controller_index=1,
+            card_name="Grizzly Bears",
+            effects=[{"type": "enter_battlefield"}],
+        )
+        game.state.stack.push(item)
+        game.resolve_top_of_stack()
+
+        # No trigger — opponent's creature, not ours
+        assert game.state.stack.is_empty
+        # Library unchanged — no cards drawn
+        assert len(game.state.get_zone(0, Zone.LIBRARY)) == library_before
+
+    def test_does_not_trigger_for_non_creature(self):
+        """Beast Whisperer should not trigger when a non-creature permanent
+        enters the battlefield under our control."""
+        game = _setup_game()
+        bw_card = self._make_beast_whisperer()
+        bw = CardInstance(card=bw_card, zone=Zone.BATTLEFIELD,
+                          owner_index=0, controller_index=0)
+        game.state.cards.append(bw)
+
+        library_before = len(game.state.get_zone(0, Zone.LIBRARY))
+
+        # Player 0 plays an artifact (not a creature)
+        artifact_card = Card(
+            name="Sol Ring", card_type=CardType.ARTIFACT,
+            cost=ManaCost.parse("{1}"),
+        )
+        artifact = CardInstance(card=artifact_card, zone=Zone.STACK,
+                                owner_index=0, controller_index=0)
+        game.state.cards.append(artifact)
+
+        item = StackItem(
+            source_id=artifact.instance_id,
+            controller_index=0,
+            card_name="Sol Ring",
+            effects=[{"type": "enter_battlefield"}],
+        )
+        game.state.stack.push(item)
+        game.resolve_top_of_stack()
+
+        # No trigger — Sol Ring is not a creature
+        assert game.state.stack.is_empty
+        assert len(game.state.get_zone(0, Zone.LIBRARY)) == library_before
