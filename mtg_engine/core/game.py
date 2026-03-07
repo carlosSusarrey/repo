@@ -23,7 +23,7 @@ from mtg_engine.core.mana_abilities import can_tap_for_mana, tap_for_mana
 from mtg_engine.core.planeswalker import activate_loyalty, can_activate_loyalty
 from mtg_engine.core.player import Player
 from mtg_engine.core.replacement_effects import ReplacementType
-from mtg_engine.core.stack import Stack, StackItem
+from mtg_engine.core.stack import AbilityOnStack, Stack, StackItem
 from mtg_engine.core.triggers import TriggerEvent
 
 
@@ -211,23 +211,18 @@ class Game:
         for tc, wc in ward_costs:
             self._log(f"Ward: {wc} paid for targeting {tc.name}")
 
-        # Build effects list for the stack item
+        # Build effects list for the stack
         effects = list(card.card.effects)
         # Permanents need an enter_battlefield effect so the unified resolver
         # moves them to the battlefield (instead of special-casing in resolve)
         if card.card.card_type not in (CardType.INSTANT, CardType.SORCERY):
             effects.insert(0, {"type": "enter_battlefield"})
 
-        # Put on stack
+        # Put the actual card on the stack
         card.zone = Zone.STACK
-        stack_item = StackItem(
-            source_id=card.instance_id,
-            controller_index=player_index,
-            card_name=card.name,
-            effects=effects,
-            targets=targets or [],
-        )
-        self.state.stack.push(stack_item)
+        card.effects = effects
+        card.targets = targets or []
+        self.state.stack.push(card)
         self._log(f"{player.name} casts {card.name}")
 
         # Fire on-cast triggers (cascade, storm, etc.)
@@ -247,9 +242,13 @@ class Game:
     def resolve_top_of_stack(self) -> dict[str, Any] | None:
         """Resolve the top item on the stack.
 
-        All stack items resolve uniformly: iterate effects and resolve each one.
-        The stack does not differentiate between spells and abilities.
-        After effects resolve, instant/sorcery source cards go to graveyard.
+        The stack holds two kinds of Stackable:
+        - ``CardInstance`` — an actual spell card on the stack.
+        - ``AbilityOnStack`` — a triggered or activated ability.
+
+        Both expose the same interface (source_id, controller_index, card_name,
+        effects, targets), so resolution logic is uniform.  After resolution,
+        instant/sorcery cards move to the graveyard and stack state is cleared.
 
         CR 608.2b: If all targets of a spell are illegal on resolution, the
         spell is countered by the game rules (fizzles).
@@ -258,6 +257,7 @@ class Game:
         if item is None:
             return None
 
+        is_spell = isinstance(item, CardInstance)
         result = {"card_name": item.card_name, "effects_resolved": []}
 
         # CR 608.2b: Check target legality on resolution
@@ -282,9 +282,15 @@ class Game:
 
             if not legal_targets:
                 # All targets illegal — spell/ability is countered (fizzles)
-                card = self.state.find_card(item.source_id)
-                if card and card.card.card_type in (CardType.INSTANT, CardType.SORCERY):
-                    card.zone = Zone.GRAVEYARD
+                if is_spell:
+                    item.zone = Zone.GRAVEYARD
+                    item.clear_stack_state()
+                else:
+                    # Ability fizzled — if source is an instant/sorcery on stack,
+                    # move it to graveyard
+                    card = self.state.find_card(item.source_id)
+                    if card and card.card.card_type in (CardType.INSTANT, CardType.SORCERY):
+                        card.zone = Zone.GRAVEYARD
                 self._log(f"{item.card_name} fizzles (all targets illegal)")
                 result["fizzled"] = True
                 self.state.reset_priority()
@@ -298,10 +304,16 @@ class Game:
             resolved = self._resolve_effect(effect, item)
             result["effects_resolved"].append(resolved)
 
-        # After resolution, instant/sorcery sources go to graveyard
-        card = self.state.find_card(item.source_id)
-        if card and card.card.card_type in (CardType.INSTANT, CardType.SORCERY):
-            card.zone = Zone.GRAVEYARD
+        # After resolution: move instant/sorcery to graveyard, clear stack state
+        if is_spell:
+            if item.card.card_type in (CardType.INSTANT, CardType.SORCERY):
+                item.zone = Zone.GRAVEYARD
+            item.clear_stack_state()
+        else:
+            # Ability resolved — check if source card is an instant/sorcery on stack
+            card = self.state.find_card(item.source_id)
+            if card and card.card.card_type in (CardType.INSTANT, CardType.SORCERY):
+                card.zone = Zone.GRAVEYARD
 
         self._log(f"{item.card_name} resolves")
         self.state.check_state_based_actions()
@@ -313,8 +325,8 @@ class Game:
     def put_triggers_on_stack(self) -> int:
         """Move all pending triggered abilities onto the stack.
 
-        Each pending trigger becomes a StackItem with the trigger's effects.
-        Returns the number of triggers placed on the stack.
+        Each pending trigger becomes an AbilityOnStack with the trigger's
+        effects.  Returns the number of triggers placed on the stack.
         """
         count = 0
         while self.state.triggers.has_pending:
@@ -323,7 +335,7 @@ class Game:
                 break
             source_card = self.state.find_card(pending.source_card_id)
             trigger_name = f"{source_card.name} trigger" if source_card else "Triggered ability"
-            item = StackItem(
+            item = AbilityOnStack(
                 source_id=pending.source_card_id,
                 controller_index=pending.controller_index,
                 card_name=trigger_name,

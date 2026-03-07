@@ -87,7 +87,12 @@ class Card:
 
 @dataclass
 class CardInstance:
-    """A specific instance of a card in a game (tracks state)."""
+    """A specific instance of a card in a game (tracks state).
+
+    When on the stack, this object *is* the stack entry — it satisfies the
+    ``Stackable`` protocol via the ``source_id``, ``card_name``, ``effects``,
+    and ``targets`` properties.
+    """
 
     card: Card
     instance_id: str = field(default_factory=lambda: str(uuid4())[:8])
@@ -108,6 +113,35 @@ class CardInstance:
     temp_toughness_mod: int = 0
     # Token tracking
     is_token: bool = False
+    # Stack state — populated when casting, cleared on resolution
+    _stack_effects: list[dict[str, Any]] = field(default_factory=list)
+    _stack_targets: list[str] = field(default_factory=list)
+
+    # -- Stackable protocol properties --
+
+    @property
+    def source_id(self) -> str:
+        return self.instance_id
+
+    @property
+    def card_name(self) -> str:
+        return self.card.name
+
+    @property
+    def effects(self) -> list[dict[str, Any]]:
+        return self._stack_effects
+
+    @effects.setter
+    def effects(self, value: list[dict[str, Any]]) -> None:
+        self._stack_effects = value
+
+    @property
+    def targets(self) -> list[str]:
+        return self._stack_targets
+
+    @targets.setter
+    def targets(self, value: list[str]) -> None:
+        self._stack_targets = value
 
     @property
     def name(self) -> str:
@@ -179,6 +213,11 @@ class CardInstance:
 
     def untap(self) -> None:
         self.tapped = False
+
+    def clear_stack_state(self) -> None:
+        """Clear stack-related state after resolution or leaving the stack."""
+        self._stack_effects = []
+        self._stack_targets = []
 
     def clear_end_of_turn(self) -> None:
         """Clear temporary effects at end of turn."""

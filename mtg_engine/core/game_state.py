@@ -154,6 +154,9 @@ class GameState:
                 card.removed_keywords.clear()
                 card.temp_power_mod = 0
                 card.temp_toughness_mod = 0
+                # Clear stack state when leaving the stack
+                if old_zone == Zone.STACK:
+                    card.clear_stack_state()
                 # Handle attachments leaving battlefield
                 if old_zone == Zone.BATTLEFIELD:
                     self._handle_leaving_battlefield(card)
