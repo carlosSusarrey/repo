@@ -183,6 +183,22 @@ class ManaCost:
                 result.add(color_map[p.color])
         return result
 
+    def __add__(self, other: ManaCost) -> ManaCost:
+        """Combine two mana costs (e.g. spell cost + ward cost)."""
+        return ManaCost(
+            generic=self.generic + other.generic,
+            white=self.white + other.white,
+            blue=self.blue + other.blue,
+            black=self.black + other.black,
+            red=self.red + other.red,
+            green=self.green + other.green,
+            colorless=self.colorless + other.colorless,
+            snow=self.snow + other.snow,
+            x_count=self.x_count + other.x_count,
+            hybrid=self.hybrid + other.hybrid,
+            phyrexian=self.phyrexian + other.phyrexian,
+        )
+
     def __str__(self) -> str:
         parts = []
         parts.extend(["{X}"] * self.x_count)

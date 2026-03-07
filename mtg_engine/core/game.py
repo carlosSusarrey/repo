@@ -15,7 +15,10 @@ from mtg_engine.core.combat import (
 from mtg_engine.core.enums import CardType, Phase, Step, Zone
 from mtg_engine.core.equipment import attach, can_enchant, can_equip
 from mtg_engine.core.game_state import GameState
-from mtg_engine.core.keywords import Keyword
+from mtg_engine.core.keywords import (
+    Keyword, can_be_damaged_by, can_be_targeted_by_opponent,
+    has_ward_cost,
+)
 from mtg_engine.core.mana_abilities import can_tap_for_mana, tap_for_mana
 from mtg_engine.core.planeswalker import activate_loyalty, can_activate_loyalty
 from mtg_engine.core.player import Player
@@ -153,12 +156,51 @@ class Game:
             if not self.state.stack.is_empty:
                 return False
 
-        # Check mana payment
-        if not player.mana_pool.can_pay(card.card.cost):
+        # Validate targets against hexproof/protection/ward
+        ward_costs = []
+        if targets:
+            for target_id in targets:
+                target_card = self.state.find_card(target_id)
+                if target_card and target_card.zone == Zone.BATTLEFIELD:
+                    # Only check opponent's permanents for hexproof
+                    if target_card.controller_index != player_index:
+                        if not can_be_targeted_by_opponent(
+                            target_card.keywords,
+                            keyword_params=target_card.card.keyword_params,
+                            source_colors=card.card.colors,
+                            source_card_types=card.card.card_types,
+                        ):
+                            self._log(f"{target_card.name} can't be targeted")
+                            return False
+                        # Check ward cost
+                        ward = has_ward_cost(
+                            target_card.keywords,
+                            target_card.card.keyword_params,
+                        )
+                        if ward:
+                            ward_costs.append((target_card, ward))
+
+        # Check mana payment (base cost + ward costs)
+        from mtg_engine.core.mana import ManaCost
+        total_ward = ManaCost()
+        for _, ward_cost_str in ward_costs:
+            total_ward = total_ward + ManaCost.parse(ward_cost_str)
+
+        combined_cost = card.card.cost + total_ward
+        if not player.mana_pool.can_pay(combined_cost):
+            if ward_costs and player.mana_pool.can_pay(card.card.cost):
+                # Can pay spell cost but not ward — spell is countered
+                player.mana_pool.pay(card.card.cost)
+                card.zone = Zone.GRAVEYARD
+                for tc, wc in ward_costs:
+                    self._log(f"Ward: {tc.name}'s ward cost {wc} not paid — spell countered")
+                return False
             return False
 
-        # Pay the cost
-        player.mana_pool.pay(card.card.cost)
+        # Pay the cost (spell + ward)
+        player.mana_pool.pay(combined_cost)
+        for tc, wc in ward_costs:
+            self._log(f"Ward: {wc} paid for targeting {tc.name}")
 
         # Build effects list for the stack item
         effects = list(card.card.effects)
@@ -271,6 +313,15 @@ class Game:
                 # Try as creature
                 target_card = self.state.find_card(target_id)
                 if target_card and target_card.zone == Zone.BATTLEFIELD:
+                    # Protection prevents damage
+                    if not can_be_damaged_by(
+                        target_card.keywords,
+                        target_card.card.keyword_params,
+                        source_colors=source_card.card.colors if source_card else None,
+                        source_card_types=source_card.card.card_types if source_card else None,
+                    ):
+                        self._log(f"{target_card.name} has protection — damage prevented")
+                        continue
                     if has_deathtouch and amount > 0:
                         target_card.damage_marked = target_card.current_toughness or amount
                     else:
@@ -638,6 +689,17 @@ class Game:
                 target = lookup.get(dmg.target_id)
                 source = lookup.get(dmg.source_id)
                 if target and target.zone == Zone.BATTLEFIELD:
+                    # Protection prevents combat damage
+                    if source and not can_be_damaged_by(
+                        target.keywords,
+                        target.card.keyword_params,
+                        source_colors=source.card.colors,
+                        source_card_types=source.card.card_types,
+                    ):
+                        log_entries.append(
+                            f"{target.name} has protection — combat damage from {source.name} prevented"
+                        )
+                        continue
                     if dmg.has_deathtouch and dmg.amount > 0:
                         target.damage_marked = target.current_toughness or dmg.amount
                     else:

@@ -132,7 +132,9 @@ KEYWORD_MAP: dict[str, Keyword] = {
 
 def can_block(attacker_keywords: set[Keyword], blocker_keywords: set[Keyword],
               attacker_colors: set | None = None,
-              blocker_colors: set | None = None) -> bool:
+              blocker_colors: set | None = None,
+              attacker_keyword_params: dict | None = None,
+              blocker_card_types: list | None = None) -> bool:
     """Check if a creature with blocker_keywords can legally block an attacker.
 
     Does NOT handle menace (requires 2+ blockers) — that's checked at the
@@ -174,6 +176,14 @@ def can_block(attacker_keywords: set[Keyword], blocker_keywords: set[Keyword],
         if not is_artifact and not shares_color:
             return False
 
+    # Protection: attacker with protection from blocker's quality can't be blocked
+    if Keyword.PROTECTION in attacker_keywords and attacker_keyword_params:
+        if not can_be_blocked_by(
+            attacker_keywords, attacker_keyword_params,
+            blocker_colors, blocker_card_types,
+        ):
+            return False
+
     return True
 
 
@@ -194,18 +204,161 @@ def is_damage_lethal(damage: int, toughness: int, source_has_deathtouch: bool) -
     return damage >= toughness
 
 
-def can_be_targeted_by_opponent(keywords: set[Keyword]) -> bool:
-    """Check if a permanent can be targeted by an opponent's spell/ability."""
+def can_be_targeted_by_opponent(
+    keywords: set[Keyword],
+    keyword_params: dict | None = None,
+    source_colors: set | None = None,
+    source_card_types: list | None = None,
+) -> bool:
+    """Check if a permanent can be targeted by an opponent's spell/ability.
+
+    Returns False if targeting is completely prevented (hexproof, shroud,
+    protection from the source's quality). Does NOT handle ward — ward
+    allows targeting but imposes an additional cost (see has_ward_cost).
+    """
     if Keyword.HEXPROOF in keywords or Keyword.SHROUD in keywords:
         return False
+
+    # Protection from [quality] prevents targeting by sources with that quality
+    if Keyword.PROTECTION in keywords and keyword_params:
+        protection_from = keyword_params.get(Keyword.PROTECTION)
+        if _protection_applies(protection_from, source_colors, source_card_types):
+            return False
+
     return True
 
 
-def can_be_targeted_by_controller(keywords: set[Keyword]) -> bool:
+def can_be_targeted_by_controller(
+    keywords: set[Keyword],
+    keyword_params: dict | None = None,
+    source_colors: set | None = None,
+    source_card_types: list | None = None,
+) -> bool:
     """Check if a permanent can be targeted by its controller."""
     if Keyword.SHROUD in keywords:
         return False
+
+    # Protection still applies even to controller's own spells
+    if Keyword.PROTECTION in keywords and keyword_params:
+        protection_from = keyword_params.get(Keyword.PROTECTION)
+        if _protection_applies(protection_from, source_colors, source_card_types):
+            return False
+
     return True
+
+
+def has_ward_cost(keywords: set[Keyword], keyword_params: dict | None = None) -> str | None:
+    """Return the ward cost string if this permanent has ward, else None.
+
+    Ward doesn't prevent targeting — it imposes an additional cost.
+    If the cost isn't paid, the spell/ability is countered.
+    """
+    if Keyword.WARD not in keywords:
+        return None
+    if keyword_params:
+        cost = keyword_params.get(Keyword.WARD)
+        if cost is not None:
+            return str(cost)
+    # Ward with no specified cost (e.g. disguise grants ward {2})
+    return "{2}"
+
+
+def can_be_blocked_by(
+    attacker_keywords: set[Keyword],
+    attacker_keyword_params: dict | None,
+    blocker_colors: set | None = None,
+    blocker_card_types: list | None = None,
+) -> bool:
+    """Check if the attacker's protection prevents a specific blocker.
+
+    Returns False if the attacker has protection from the blocker's quality.
+    This is separate from the main can_block() evasion check.
+    """
+    if Keyword.PROTECTION not in attacker_keywords:
+        return True
+    if not attacker_keyword_params:
+        return True
+    protection_from = attacker_keyword_params.get(Keyword.PROTECTION)
+    return not _protection_applies(protection_from, blocker_colors, blocker_card_types)
+
+
+def can_be_damaged_by(
+    keywords: set[Keyword],
+    keyword_params: dict | None = None,
+    source_colors: set | None = None,
+    source_card_types: list | None = None,
+) -> bool:
+    """Check if a permanent can be dealt damage by a source.
+
+    Protection from [quality] prevents all damage from sources with that quality.
+    """
+    if Keyword.PROTECTION not in keywords:
+        return True
+    if not keyword_params:
+        return True
+    protection_from = keyword_params.get(Keyword.PROTECTION)
+    return not _protection_applies(protection_from, source_colors, source_card_types)
+
+
+def can_be_enchanted_or_equipped_by(
+    keywords: set[Keyword],
+    keyword_params: dict | None = None,
+    source_colors: set | None = None,
+    source_card_types: list | None = None,
+) -> bool:
+    """Check if a permanent can be enchanted/equipped by a source.
+
+    Protection from [quality] prevents being enchanted or equipped
+    by sources with that quality.
+    """
+    if Keyword.PROTECTION not in keywords:
+        return True
+    if not keyword_params:
+        return True
+    protection_from = keyword_params.get(Keyword.PROTECTION)
+    return not _protection_applies(protection_from, source_colors, source_card_types)
+
+
+def _protection_applies(
+    protection_from: str | None,
+    source_colors: set | None = None,
+    source_card_types: list | None = None,
+) -> bool:
+    """Check if a protection quality matches the source.
+
+    Protection can be from a color (e.g. "white", "red"), a card type
+    (e.g. "instant"), or "all" (pro everything).
+    """
+    if not protection_from:
+        return False
+
+    from mtg_engine.core.enums import CardType, Color
+
+    protection_from_lower = protection_from.lower()
+
+    if protection_from_lower == "all":
+        return True
+
+    # Check color-based protection
+    color_map = {
+        "white": Color.WHITE, "blue": Color.BLUE, "black": Color.BLACK,
+        "red": Color.RED, "green": Color.GREEN,
+    }
+    prot_color = color_map.get(protection_from_lower)
+    if prot_color and source_colors and prot_color in source_colors:
+        return True
+
+    # Check card-type-based protection
+    type_map = {
+        "creature": CardType.CREATURE, "instant": CardType.INSTANT,
+        "sorcery": CardType.SORCERY, "enchantment": CardType.ENCHANTMENT,
+        "artifact": CardType.ARTIFACT, "planeswalker": CardType.PLANESWALKER,
+    }
+    prot_type = type_map.get(protection_from_lower)
+    if prot_type and source_card_types and prot_type in source_card_types:
+        return True
+
+    return False
 
 
 def can_be_destroyed(keywords: set[Keyword]) -> bool:
