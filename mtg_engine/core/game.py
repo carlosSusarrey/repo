@@ -22,7 +22,8 @@ from mtg_engine.core.keywords import (
 from mtg_engine.core.mana_abilities import can_tap_for_mana, tap_for_mana
 from mtg_engine.core.planeswalker import activate_loyalty, can_activate_loyalty
 from mtg_engine.core.player import Player
-from mtg_engine.core.stack import Stack, StackItem
+from mtg_engine.core.replacement_effects import ReplacementType
+from mtg_engine.core.stack import AbilityOnStack, Stackable, Stack
 from mtg_engine.core.triggers import TriggerEvent
 
 
@@ -87,6 +88,14 @@ class Game:
 
     def draw_card(self, player_index: int) -> CardInstance | None:
         """Draw a card for a player."""
+        # Check draw replacement effects
+        draw_event = {"player_index": player_index}
+        draw_result = self.state.replacement_effects.check_replacement(
+            ReplacementType.DRAW, draw_event)
+        if draw_result is None:
+            self._log(f"{self.state.players[player_index].name}'s draw prevented")
+            return None
+
         library = self.state.get_zone(player_index, Zone.LIBRARY)
         if not library:
             self.state.players[player_index].lost = True
@@ -127,13 +136,15 @@ class Game:
         # Trigger landfall
         self.state.triggers.check_triggers(
             TriggerEvent.LAND_ENTERS,
-            {"card_id": card.instance_id, "card": card, "player_index": player_index},
+            {"card_id": card.instance_id, "card": card, "player_index": player_index,
+             "from_zone": Zone.HAND},
             self.state.get_battlefield(),
         )
         # ETB trigger
         self.state.triggers.check_triggers(
             TriggerEvent.ENTERS_BATTLEFIELD,
-            {"card_id": card.instance_id, "card": card, "player_index": player_index},
+            {"card_id": card.instance_id, "card": card, "player_index": player_index,
+             "from_zone": Zone.HAND},
             self.state.get_battlefield(),
         )
         return True
@@ -202,23 +213,18 @@ class Game:
         for tc, wc in ward_costs:
             self._log(f"Ward: {wc} paid for targeting {tc.name}")
 
-        # Build effects list for the stack item
+        # Build effects list for the stack
         effects = list(card.card.effects)
         # Permanents need an enter_battlefield effect so the unified resolver
         # moves them to the battlefield (instead of special-casing in resolve)
         if card.card.card_type not in (CardType.INSTANT, CardType.SORCERY):
             effects.insert(0, {"type": "enter_battlefield"})
 
-        # Put on stack
+        # Put the actual card on the stack
         card.zone = Zone.STACK
-        stack_item = StackItem(
-            source_id=card.instance_id,
-            controller_index=player_index,
-            card_name=card.name,
-            effects=effects,
-            targets=targets or [],
-        )
-        self.state.stack.push(stack_item)
+        card.effects = effects
+        card.targets = targets or []
+        self.state.stack.push(card)
         self._log(f"{player.name} casts {card.name}")
 
         # Fire on-cast triggers (cascade, storm, etc.)
@@ -238,25 +244,78 @@ class Game:
     def resolve_top_of_stack(self) -> dict[str, Any] | None:
         """Resolve the top item on the stack.
 
-        All stack items resolve uniformly: iterate effects and resolve each one.
-        The stack does not differentiate between spells and abilities.
-        After effects resolve, instant/sorcery source cards go to graveyard.
+        The stack holds two kinds of Stackable:
+        - ``CardInstance`` — an actual spell card on the stack.
+        - ``AbilityOnStack`` — a triggered or activated ability.
+
+        Both expose the same interface (source_id, controller_index, card_name,
+        effects, targets), so resolution logic is uniform.  After resolution,
+        instant/sorcery cards move to the graveyard and stack state is cleared.
+
+        CR 608.2b: If all targets of a spell are illegal on resolution, the
+        spell is countered by the game rules (fizzles).
         """
         item = self.state.stack.pop()
         if item is None:
             return None
 
+        is_spell = isinstance(item, CardInstance)
         result = {"card_name": item.card_name, "effects_resolved": []}
+
+        # CR 608.2b: Check target legality on resolution
+        if item.targets:
+            legal_targets = []
+            for target_id in item.targets:
+                # Check if target is a player
+                is_player = any(p.name == target_id for p in self.state.players)
+                if is_player:
+                    # Player targets are legal if the player hasn't lost
+                    player_alive = any(
+                        p.name == target_id and not p.lost
+                        for p in self.state.players
+                    )
+                    if player_alive:
+                        legal_targets.append(target_id)
+                else:
+                    # Card targets: check if still on the battlefield (or stack for counter spells)
+                    target_card = self.state.find_card(target_id)
+                    if target_card and target_card.zone in (Zone.BATTLEFIELD, Zone.STACK):
+                        legal_targets.append(target_id)
+
+            if not legal_targets:
+                # All targets illegal — spell/ability is countered (fizzles)
+                if is_spell:
+                    item.zone = Zone.GRAVEYARD
+                    item.clear_stack_state()
+                else:
+                    # Ability fizzled — if source is an instant/sorcery on stack,
+                    # move it to graveyard
+                    card = self.state.find_card(item.source_id)
+                    if card and card.card.card_type in (CardType.INSTANT, CardType.SORCERY):
+                        card.zone = Zone.GRAVEYARD
+                self._log(f"{item.card_name} fizzles (all targets illegal)")
+                result["fizzled"] = True
+                self.state.reset_priority()
+                return result
+
+            # Update targets to only legal ones
+            item.targets = legal_targets
 
         # Resolve all effects on the stack item
         for effect in item.effects:
             resolved = self._resolve_effect(effect, item)
             result["effects_resolved"].append(resolved)
 
-        # After resolution, instant/sorcery sources go to graveyard
-        card = self.state.find_card(item.source_id)
-        if card and card.card.card_type in (CardType.INSTANT, CardType.SORCERY):
-            card.zone = Zone.GRAVEYARD
+        # After resolution: move instant/sorcery to graveyard, clear stack state
+        if is_spell:
+            if item.card.card_type in (CardType.INSTANT, CardType.SORCERY):
+                item.zone = Zone.GRAVEYARD
+            item.clear_stack_state()
+        else:
+            # Ability resolved — check if source card is an instant/sorcery on stack
+            card = self.state.find_card(item.source_id)
+            if card and card.card.card_type in (CardType.INSTANT, CardType.SORCERY):
+                card.zone = Zone.GRAVEYARD
 
         self._log(f"{item.card_name} resolves")
         self.state.check_state_based_actions()
@@ -268,8 +327,8 @@ class Game:
     def put_triggers_on_stack(self) -> int:
         """Move all pending triggered abilities onto the stack.
 
-        Each pending trigger becomes a StackItem with the trigger's effects.
-        Returns the number of triggers placed on the stack.
+        Each pending trigger becomes an AbilityOnStack with the trigger's
+        effects.  Returns the number of triggers placed on the stack.
         """
         count = 0
         while self.state.triggers.has_pending:
@@ -278,7 +337,7 @@ class Game:
                 break
             source_card = self.state.find_card(pending.source_card_id)
             trigger_name = f"{source_card.name} trigger" if source_card else "Triggered ability"
-            item = StackItem(
+            item = AbilityOnStack(
                 source_id=pending.source_card_id,
                 controller_index=pending.controller_index,
                 card_name=trigger_name,
@@ -288,7 +347,7 @@ class Game:
             count += 1
         return count
 
-    def _resolve_effect(self, effect: dict[str, Any], item: StackItem) -> dict[str, Any]:
+    def _resolve_effect(self, effect: dict[str, Any], item: Stackable) -> dict[str, Any]:
         """Resolve a single effect from a spell or ability."""
         effect_type = effect.get("type", "")
         result = {"type": effect_type, "success": False}
@@ -303,12 +362,29 @@ class Game:
                 # Try as player
                 for i, player in enumerate(self.state.players):
                     if player.name == target_id:
-                        player.deal_damage(amount)
+                        dmg_event = {"amount": amount, "target": target_id,
+                                     "source_id": item.source_id, "is_combat": False}
+                        dmg_result = self.state.replacement_effects.check_replacement(
+                            ReplacementType.DAMAGE, dmg_event)
+                        if dmg_result is None:
+                            self._log(f"Damage to {player.name} prevented")
+                            continue
+                        actual = dmg_result.get("amount", amount)
+                        actual_target = dmg_result.get("target", target_id)
+                        # Handle redirect
+                        if actual_target != target_id:
+                            redirect_card = self.state.find_card(actual_target)
+                            if redirect_card and redirect_card.zone == Zone.BATTLEFIELD:
+                                redirect_card.damage_marked += actual
+                                result["success"] = True
+                                self._log(f"{item.card_name} deals {actual} damage to {redirect_card.name} (redirected)")
+                            continue
+                        player.deal_damage(actual)
                         result["success"] = True
-                        self._log(f"{item.card_name} deals {amount} damage to {player.name}")
+                        self._log(f"{item.card_name} deals {actual} damage to {player.name}")
                         if has_lifelink:
-                            self.state.players[item.controller_index].gain_life(amount)
-                            self._log(f"Lifelink: {self.state.players[item.controller_index].name} gains {amount} life")
+                            self.state.players[item.controller_index].gain_life(actual)
+                            self._log(f"Lifelink: {self.state.players[item.controller_index].name} gains {actual} life")
 
                 # Try as creature
                 target_card = self.state.find_card(target_id)
@@ -322,20 +398,40 @@ class Game:
                     ):
                         self._log(f"{target_card.name} has protection — damage prevented")
                         continue
-                    if has_deathtouch and amount > 0:
-                        target_card.damage_marked = target_card.current_toughness or amount
+                    dmg_event = {"amount": amount, "target": target_id,
+                                 "source_id": item.source_id, "is_combat": False}
+                    dmg_result = self.state.replacement_effects.check_replacement(
+                        ReplacementType.DAMAGE, dmg_event)
+                    if dmg_result is None:
+                        self._log(f"Damage to {target_card.name} prevented")
+                        continue
+                    actual = dmg_result.get("amount", amount)
+                    if has_deathtouch and actual > 0:
+                        target_card.damage_marked = target_card.current_toughness or actual
                     else:
-                        target_card.damage_marked += amount
+                        target_card.damage_marked += actual
                     result["success"] = True
-                    self._log(f"{item.card_name} deals {amount} damage to {target_card.name}")
+                    self._log(f"{item.card_name} deals {actual} damage to {target_card.name}")
                     if has_lifelink:
-                        self.state.players[item.controller_index].gain_life(amount)
+                        self.state.players[item.controller_index].gain_life(actual)
 
         elif effect_type == "destroy":
             for target_id in item.targets:
                 target_card = self.state.find_card(target_id)
                 if target_card and target_card.zone == Zone.BATTLEFIELD:
                     if not target_card.has_keyword(Keyword.INDESTRUCTIBLE):
+                        # Check die replacement ("if ~ would die, instead...")
+                        if target_card.card.is_creature:
+                            die_event = {"card_id": target_card.instance_id,
+                                         "card": target_card,
+                                         "player_index": target_card.controller_index,
+                                         "cause": "destroy"}
+                            die_result = self.state.replacement_effects.check_replacement(
+                                ReplacementType.DIE, die_event)
+                            if die_result is None:
+                                self._log(f"{target_card.name}'s death prevented")
+                                result["success"] = True
+                                continue
                         self.state.move_card(target_id, Zone.GRAVEYARD)
                         result["success"] = True
                         self._log(f"{item.card_name} destroys {target_card.name}")
@@ -358,7 +454,13 @@ class Game:
 
         elif effect_type == "gain_life":
             amount = effect.get("amount", 0)
-            self.state.players[item.controller_index].gain_life(amount)
+            life_event = {"amount": amount, "player_index": item.controller_index}
+            life_result = self.state.replacement_effects.check_replacement(
+                ReplacementType.LIFE_GAIN, life_event)
+            if life_result is not None:
+                actual = life_result.get("amount", amount)
+                if actual > 0:
+                    self.state.players[item.controller_index].gain_life(actual)
             result["success"] = True
 
         elif effect_type == "lose_life":
@@ -498,16 +600,59 @@ class Game:
             if target_info.get("kind") == "self":
                 source_card = self.state.find_card(item.source_id)
                 if source_card and source_card.zone == Zone.BATTLEFIELD:
-                    self.state.move_card(item.source_id, Zone.GRAVEYARD)
+                    is_creature = source_card.card.is_creature
+                    # Check die replacement for creatures being sacrificed
+                    death_prevented = False
+                    if is_creature:
+                        die_event = {"card_id": source_card.instance_id,
+                                     "card": source_card,
+                                     "player_index": source_card.controller_index,
+                                     "cause": "sacrifice"}
+                        die_result = self.state.replacement_effects.check_replacement(
+                            ReplacementType.DIE, die_event)
+                        if die_result is None:
+                            self._log(f"{source_card.name}'s death prevented")
+                            death_prevented = True
+                    if not death_prevented:
+                        self.state.move_card(item.source_id, Zone.GRAVEYARD)
+                        self._log(f"{source_card.name} is sacrificed")
+                        if is_creature:
+                            self.state.triggers.check_triggers(
+                                TriggerEvent.DIES,
+                                {"card_id": source_card.instance_id, "card": source_card,
+                                 "player_index": source_card.controller_index},
+                                self.state.get_battlefield(),
+                                self.state.get_zone(source_card.owner_index, Zone.GRAVEYARD),
+                            )
                     result["success"] = True
-                    self._log(f"{source_card.name} is sacrificed")
             else:
                 for target_id in item.targets:
                     target_card = self.state.find_card(target_id)
                     if target_card and target_card.zone == Zone.BATTLEFIELD:
+                        is_creature = target_card.card.is_creature
+                        # Check die replacement for creatures being sacrificed
+                        if is_creature:
+                            die_event = {"card_id": target_card.instance_id,
+                                         "card": target_card,
+                                         "player_index": target_card.controller_index,
+                                         "cause": "sacrifice"}
+                            die_result = self.state.replacement_effects.check_replacement(
+                                ReplacementType.DIE, die_event)
+                            if die_result is None:
+                                self._log(f"{target_card.name}'s death prevented")
+                                result["success"] = True
+                                continue
                         self.state.move_card(target_id, Zone.GRAVEYARD)
                         result["success"] = True
                         self._log(f"{target_card.name} is sacrificed")
+                        if is_creature:
+                            self.state.triggers.check_triggers(
+                                TriggerEvent.DIES,
+                                {"card_id": target_card.instance_id, "card": target_card,
+                                 "player_index": target_card.controller_index},
+                                self.state.get_battlefield(),
+                                self.state.get_zone(target_card.owner_index, Zone.GRAVEYARD),
+                            )
 
         elif effect_type == "create_token":
             token_name = effect.get("name", "Token")
@@ -523,6 +668,7 @@ class Game:
         elif effect_type == "enter_battlefield":
             source_card = self.state.find_card(item.source_id)
             if source_card:
+                from_zone = source_card.zone
                 self.state.move_card(source_card.instance_id, Zone.BATTLEFIELD)
                 # Auras attach to their target on resolution
                 if "Aura" in source_card.card.subtypes and item.targets:
@@ -531,7 +677,8 @@ class Game:
                 self.state.triggers.check_triggers(
                     TriggerEvent.ENTERS_BATTLEFIELD,
                     {"card_id": source_card.instance_id, "card": source_card,
-                     "player_index": source_card.controller_index},
+                     "player_index": source_card.controller_index,
+                     "from_zone": from_zone},
                     self.state.get_battlefield(),
                 )
                 result["success"] = True
@@ -583,7 +730,8 @@ class Game:
         self.state.triggers.check_triggers(
             TriggerEvent.ENTERS_BATTLEFIELD,
             {"card_id": token_instance.instance_id, "card": token_instance,
-             "player_index": controller_index},
+             "player_index": controller_index,
+             "from_zone": None},
             self.state.get_battlefield(),
         )
         return token_instance
@@ -896,14 +1044,14 @@ class Game:
             return False
 
         # Put ability on stack
-        stack_item = StackItem(
+        ability = AbilityOnStack(
             source_id=result["source_id"],
             controller_index=result["controller_index"],
             card_name=f"{result['card_name']} loyalty ability",
             effects=result["effects"],
             targets=targets or [],
         )
-        self.state.stack.push(stack_item)
+        self.state.stack.push(ability)
         self._log(f"{card.name} activates loyalty ability {ability_index}")
         self.state.reset_priority()
         return True

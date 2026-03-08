@@ -17,6 +17,11 @@ class TriggerEvent(Enum):
     ENTERS_BATTLEFIELD = auto()
     LEAVES_BATTLEFIELD = auto()
     DIES = auto()  # creature goes from battlefield to graveyard
+    ENTERS_GRAVEYARD = auto()  # card goes to graveyard from any zone
+    IS_EXILED = auto()  # card is exiled from any zone
+    ENTERS_HAND = auto()  # card is put into hand from any zone
+    PUT_ON_TOP_LIBRARY = auto()  # card is put on top of library
+    PUT_ON_BOTTOM_LIBRARY = auto()  # card is put on bottom of library
     CAST = auto()  # a spell is cast
 
     # Combat triggers
@@ -140,12 +145,23 @@ class TriggerManager:
             return self._pending.pop(0)
         return None
 
+    # Events where the card that changed zones may have its own triggers
+    _ZONE_CHANGE_EVENTS = frozenset({
+        TriggerEvent.DIES,
+        TriggerEvent.LEAVES_BATTLEFIELD,
+        TriggerEvent.ENTERS_GRAVEYARD,
+        TriggerEvent.IS_EXILED,
+        TriggerEvent.ENTERS_HAND,
+        TriggerEvent.PUT_ON_TOP_LIBRARY,
+        TriggerEvent.PUT_ON_BOTTOM_LIBRARY,
+    })
+
     def check_triggers(
         self,
         event: TriggerEvent,
         event_data: dict[str, Any],
         battlefield_cards: list,
-        graveyard_cards: list | None = None,
+        extra_cards: list | None = None,
     ) -> list[PendingTrigger]:
         """Check all cards for triggers matching this event.
 
@@ -153,7 +169,9 @@ class TriggerManager:
             event: The event that occurred
             event_data: Context about the event (e.g., which card, which player)
             battlefield_cards: All CardInstances on the battlefield
-            graveyard_cards: Cards in graveyard (for death triggers)
+            extra_cards: Additional cards to check that aren't on the
+                battlefield (e.g., the card that just died, was exiled, or
+                entered the graveyard — needed so its own triggers can fire)
 
         Returns:
             List of triggered abilities that fired
@@ -163,9 +181,10 @@ class TriggerManager:
         # Check battlefield cards
         cards_to_check = list(battlefield_cards)
 
-        # For death triggers, also check the card that just died
-        if event == TriggerEvent.DIES and graveyard_cards:
-            cards_to_check.extend(graveyard_cards)
+        # For zone-change triggers, also check the card that just moved
+        # so its own triggers (e.g., "when this dies") can fire
+        if event in self._ZONE_CHANGE_EVENTS and extra_cards:
+            cards_to_check.extend(extra_cards)
 
         for card in cards_to_check:
             for ability_def in card.card.triggered_abilities:
@@ -203,6 +222,11 @@ def _parse_trigger_event(name: str) -> TriggerEvent | None:
         "enters_battlefield": TriggerEvent.ENTERS_BATTLEFIELD,
         "leaves_battlefield": TriggerEvent.LEAVES_BATTLEFIELD,
         "dies": TriggerEvent.DIES,
+        "enters_graveyard": TriggerEvent.ENTERS_GRAVEYARD,
+        "is_exiled": TriggerEvent.IS_EXILED,
+        "enters_hand": TriggerEvent.ENTERS_HAND,
+        "put_on_top": TriggerEvent.PUT_ON_TOP_LIBRARY,
+        "put_on_bottom": TriggerEvent.PUT_ON_BOTTOM_LIBRARY,
         "cast": TriggerEvent.CAST,
         "attacks": TriggerEvent.ATTACKS,
         "blocks": TriggerEvent.BLOCKS,
