@@ -4,6 +4,7 @@
 - **Documentation updates are mandatory**: When implementing a feature or fixing a bug, update ALL relevant docs:
   - `CLAUDE.md` — update "What's Already Implemented" and "Remaining Gaps" sections
   - `docs/GAP_ANALYSIS.md` — strike through completed items, update phase status
+  - `README.md` — update "Implemented Mechanics" if the change adds a user-visible mechanic or major feature
 - **Track small tasks and future improvements**: Add discovered issues, tech debt, or small follow-ups to the "Future Improvements / Small Tasks" section below so they aren't lost between sessions.
 - **Tests**: Always run `python -m pytest` after changes. Current count: 554 tests.
 - **Commit style**: Imperative mood, explain "why" not "what". Include session link.
