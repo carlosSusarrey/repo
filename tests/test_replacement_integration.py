@@ -556,7 +556,7 @@ class TestDSLReplacementEffects:
         card = cards[0]
         assert len(card.replacement_effects) == 1
         repl = card.replacement_effects[0]
-        assert repl["type"] == "enter_battlefield"
+        assert repl["type"] == "enters_battlefield"
         assert repl["action"] == "enter_tapped"
         assert repl["apply_to"] == "self"
 
@@ -588,7 +588,7 @@ class TestDSLReplacementEffects:
         ''')
         card = cards[0]
         repl = card.replacement_effects[0]
-        assert repl["type"] == "die"
+        assert repl["type"] == "dies"
         assert repl["action"] == "prevent"
 
     def test_parse_prevent_damage(self):
@@ -631,7 +631,7 @@ class TestDSLReplacementEffects:
         ''')
         card = cards[0]
         repl = card.replacement_effects[0]
-        assert repl["type"] == "life_gain"
+        assert repl["type"] == "gain_life"
         assert repl["action"] == "double_life"
         assert repl["apply_to"] == "any"
 

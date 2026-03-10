@@ -6,11 +6,12 @@
   - `docs/GAP_ANALYSIS.md` — strike through completed items, update phase status
   - `README.md` — update "Implemented Mechanics" if the change adds a user-visible mechanic or major feature
 - **Track small tasks and future improvements**: Add discovered issues, tech debt, or small follow-ups to the "Future Improvements / Small Tasks" section below so they aren't lost between sessions.
-- **Tests**: Always run `python -m pytest` after changes. Current count: 554 tests.
+- **Tests**: Always run `python -m pytest` after changes. Current count: 580 tests.
 - **Commit style**: Imperative mood, explain "why" not "what". Include session link.
 
 ## Architecture
 - **Core engine**: `mtg_engine/core/` — game loop (`game.py`), state (`game_state.py`), cards (`card.py`)
+- **Event system**: `mtg_engine/core/events.py` — unified `GameEvent` enum, typed event data classes, `EventBus` dispatcher
 - **Stack system**: `AbilityOnStack` for triggered/activated abilities, `CardInstance` implements `Stackable` protocol for spells
 - **SBAs**: All in `GameState.check_state_based_actions()` in `game_state.py`
 - **Tests**: `tests/` directory, run with `python -m pytest`
@@ -21,6 +22,7 @@
 - **Classes**: Level-up system in `sagas.py` (shared module with sagas)
 - **Combat**: Full combat with first strike, menace, trample, deathtouch, lifelink, vigilance, flying, reach, protection, ward
 - **Replacement effects**: ETB modifications (enters tapped, enters with counters), die replacement, draw replacement
+- **Centralized event system**: Unified `GameEvent` enum + `EventBus` replaces scattered trigger/replacement emit sites. DSL grammar uses single `GAME_EVENT` terminal for both `when()` and `replace()` syntax.
 - **Continuous effects**: Anthem effects, keyword granting/removing
 - **Equipment/Auras**: Attach, detach, protection-based falling off
 - **Planeswalkers**: Loyalty abilities, uniqueness (legend rule covers this)
@@ -29,11 +31,13 @@
 - **Flashback**: Cast from graveyard for `flashback_cost`, exiled on resolution, `cast_with_flashback` tracked on CardInstance
 
 ## Key Patterns
+- **EventBus**: `state.event_bus.emit()` / `emit_triggers_only()` / `emit_replacement_only()` is the canonical way to fire game events. All emit sites in `game.py` and `game_state.py` go through EventBus — never call `triggers.check_triggers()` or `replacement_effects.check_replacement()` directly from game code.
 - `move_card()` in `game_state.py` is the central zone-change method — handles all ETB logic (summoning sickness, planeswalker loyalty init, saga setup, replacement effects)
 - `run_step()` calls `check_state_based_actions()` after each step's automatic actions
 - `resolve_top_of_stack()` also calls `check_state_based_actions()` after resolution
 - Saga lore advancement happens in `Game._advance_sagas()`, called from `step_draw()`
 - Cards define abilities declaratively via dicts in `effects`, `triggered_abilities`, `activated_abilities`, `chapter_abilities`
+- **DSL grammar**: Uses unified `GAME_EVENT` terminal — same event names work in both `when(event):` (triggers) and `replace(event):` (replacements). Old replacement names (`die`, `enter_battlefield`, `draw`, `life_gain`) are accepted and auto-normalized to trigger-style (`dies`, `enters_battlefield`, `draw_card`, `gain_life`).
 
 ## Remaining Gaps (Phase 5+)
 See `docs/GAP_ANALYSIS.md` for full details. Key remaining items:

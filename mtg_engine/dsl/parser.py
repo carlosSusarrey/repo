@@ -30,6 +30,15 @@ SUPERTYPE_MAP = {
 }
 
 
+# Backward-compat aliases: old replacement-style names → unified trigger-style names
+_EVENT_NAME_ALIASES = {
+    "enter_battlefield": "enters_battlefield",
+    "die": "dies",
+    "draw": "draw_card",
+    "life_gain": "gain_life",
+}
+
+
 class CardTransformer(Transformer):
     """Transforms parse tree into Card objects."""
 
@@ -221,6 +230,8 @@ class CardTransformer(Transformer):
 
     def replacement_prop(self, items):
         repl_type = str(items[0]).strip()
+        # Normalize old-style replacement names to unified event names
+        repl_type = _EVENT_NAME_ALIASES.get(repl_type, repl_type)
         if len(items) == 3:
             # replace(type, scope): action
             scope = str(items[1]).strip()
