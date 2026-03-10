@@ -16,13 +16,19 @@ A Magic: The Gathering rules engine for designing and testing custom cards. Defi
 - **Stack & spells**: cast_spell flow with mana payment, target validation (hexproof/shroud/protection/ward enforcement), LIFO resolution
 - **Triggered abilities**: ETB triggers with composable source filters, on-cast triggers, auto-stack placement
 - **Auras & Equipment**: attachment rules, aura falloff from protection (SBA), hexproof doesn't block non-cast attachment
+- **State-based actions**: lethal damage, 0 toughness, 0 life, poison counters, legend rule, counter cancellation (+1/+1 vs -1/-1), planeswalker 0 loyalty, battle 0 defense, token cease-to-exist, aura legality, saga sacrifice
+- **Combat**: full combat step with first strike, double strike, menace, trample, deathtouch, lifelink, vigilance, flying, reach, protection, ward
 - **Face-down cards**: morph, disguise (with ward), cloak
 - **Transform / DFCs**: day/night, disturb, meld
 - **Adventure cards**: cast adventure half, exile, cast creature from exile
-- **Combat**: declare attackers/blockers, damage assignment, keyword interactions
+- **Sagas & Classes**: full saga lifecycle (ETB lore counter, chapter triggers, sacrifice SBA), class level-up
+- **Planeswalkers**: loyalty abilities, uniqueness via legend rule
+- **Replacement effects**: ETB modifications (enters tapped, enters with counters), die replacement, draw replacement
+- **Continuous effects**: anthem effects, keyword granting/removing
+- **Kicker**: optional additional cost for enhanced effects
+- **Flashback**: cast from graveyard for alternate cost, exiled on resolution
 - **Format support**: Standard, Modern, Legacy, Vintage, Pioneer, Pauper, Commander (color identity, command zone)
 - **Tokens, multi-type cards, Kindred type, sideboard support**
-- **457 tests** covering all implemented features
 
 See [docs/GAP_ANALYSIS.md](docs/GAP_ANALYSIS.md) for the full roadmap and remaining work.
 
@@ -34,7 +40,7 @@ mtg_engine/
   dsl/        # Card definition DSL parser and compiler
   cli/        # Command-line interface
   web/        # Flask web application
-tests/        # Test suite (457 tests)
+tests/        # Test suite
 cards/        # Card definition files (.mtg)
 docs/         # Gap analysis and implementation roadmap
 ```

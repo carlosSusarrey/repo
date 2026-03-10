@@ -90,7 +90,7 @@ The following features have been built across Phases 1–4:
 - Sagas: ETB setup, lore counter advancement, chapter triggers, sacrifice SBA
 
 **Test Coverage**
-- 538 tests covering all implemented features
+- 554 tests covering all implemented features
 - Game-level integration tests for ward payment, hexproof blocking, protection targeting, saga lifecycle
 
 ---
@@ -163,8 +163,8 @@ All evergreen keywords are implemented.
 | Keyword | Type | Engine Requirement |
 |---------|------|-------------------|
 | **Cycling {cost}** | Activated | Discard this, pay cost, draw a card |
-| **Kicker {cost}** | Static/Trigger | Optional additional cost when casting for enhanced effect |
-| **Flashback {cost}** | Static | Can be cast from graveyard for flashback cost, then exiled |
+| **Kicker {cost}** | Static/Trigger | ✅ Optional additional cost when casting for enhanced effect |
+| **Flashback {cost}** | Static | ✅ Can be cast from graveyard for flashback cost, then exiled |
 | **Equip {cost}** | Activated | Attach equipment to target creature you control |
 | **Prowess** | Triggered | Whenever you cast a noncreature spell, +1/+1 until end of turn |
 | **Surveil N** | Keyword action | Look at top N cards, put any in graveyard, rest back on top |
@@ -277,7 +277,7 @@ All evergreen keywords are implemented.
 - Full casting sequence (CR 601): announce → choose modes → choose targets → determine costs → activate mana abilities → pay costs → spell becomes cast
 - Split second (nothing else can go on stack while this resolves)
 - Copy spells on the stack (Fork, Twincast effects)
-- Alternative costs / additional costs
+- ~~Alternative costs / additional costs~~ ✅ (kicker, flashback)
 - X spells (X = 0 everywhere except stack)
 
 ### 3d. State-Based Actions — ✅ COMPLETE
@@ -466,7 +466,7 @@ Full `ReplacementEffectManager` with layering per CR 614:
 9. ✅ Planeswalker loyalty abilities
 10. ✅ Token generation and management
 11. ✅ Mana abilities (tap lands for mana)
-12. Alternative/additional costs (kicker, flashback) — partial
+12. ✅ Additional costs (kicker) and alternative costs (flashback)
 13. ✅ Continuous effects (basic layer system for P/T modifications)
 
 ### Phase 3: Advanced Mechanics — ✅ MOSTLY COMPLETE
@@ -497,8 +497,8 @@ These are the highest-impact items remaining, in recommended priority order:
 4. ~~**Replacement effects**~~ ✅ — full ReplacementEffectManager with 8 replacement types
 5. ~~**Full layer system**~~ ✅ — 7-layer ContinuousEffectManager with sublayers and timestamp ordering
 6. ~~**Sagas**~~ ✅ — lore counters, chapter abilities, sacrifice SBA, game engine integration
-7. **Kicker / additional costs** — optional extra costs when casting
-8. **Flashback** — cast from graveyard for alternate cost, then exile
+7. ~~**Kicker / additional costs**~~ ✅ — optional extra costs when casting, kicker_effects appended
+8. ~~**Flashback**~~ ✅ — cast from graveyard for flashback cost, exiled on resolution
 9. **X spells** — variable mana costs
 10. **Hybrid / Phyrexian mana** — {R/G} and {R/P} cost types
 11. **Copy effects** — Fork, Twincast, Clone

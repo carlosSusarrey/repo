@@ -4,8 +4,9 @@
 - **Documentation updates are mandatory**: When implementing a feature or fixing a bug, update ALL relevant docs:
   - `CLAUDE.md` — update "What's Already Implemented" and "Remaining Gaps" sections
   - `docs/GAP_ANALYSIS.md` — strike through completed items, update phase status
+  - `README.md` — update "Implemented Mechanics" if the change adds a user-visible mechanic or major feature
 - **Track small tasks and future improvements**: Add discovered issues, tech debt, or small follow-ups to the "Future Improvements / Small Tasks" section below so they aren't lost between sessions.
-- **Tests**: Always run `python -m pytest` after changes. Current count: 538 tests.
+- **Tests**: Always run `python -m pytest` after changes. Current count: 554 tests.
 - **Commit style**: Imperative mood, explain "why" not "what". Include session link.
 
 ## Architecture
@@ -24,6 +25,8 @@
 - **Equipment/Auras**: Attach, detach, protection-based falling off
 - **Planeswalkers**: Loyalty abilities, uniqueness (legend rule covers this)
 - **Adventure**: Cast as adventure, exile, cast from exile
+- **Kicker**: Optional additional cost (`kicker_cost` on Card), `kicker_effects` appended when kicked, `was_kicked` tracked on CardInstance
+- **Flashback**: Cast from graveyard for `flashback_cost`, exiled on resolution, `cast_with_flashback` tracked on CardInstance
 
 ## Key Patterns
 - `move_card()` in `game_state.py` is the central zone-change method — handles all ETB logic (summoning sickness, planeswalker loyalty init, saga setup, replacement effects)
@@ -34,11 +37,10 @@
 
 ## Remaining Gaps (Phase 5+)
 See `docs/GAP_ANALYSIS.md` for full details. Key remaining items:
-- Kicker/additional costs
-- Flashback
 - X spells
 - Hybrid/Phyrexian mana
-- Full 7-layer continuous effects system
+- Copy effects (Fork, Clone)
+- Cycling, Prowess
 
 ## Future Improvements / Small Tasks
 <!-- Add discovered issues, tech debt, and follow-ups here so they survive between sessions -->

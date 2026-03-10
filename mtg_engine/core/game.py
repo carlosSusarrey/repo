@@ -150,13 +150,32 @@ class Game:
         return True
 
     def cast_spell(self, player_index: int, instance_id: str,
-                   targets: list[str] | None = None) -> bool:
-        """Cast a spell - put it on the stack."""
+                   targets: list[str] | None = None,
+                   kicked: bool = False,
+                   flashback: bool = False) -> bool:
+        """Cast a spell - put it on the stack.
+
+        Args:
+            kicked: If True, pay the kicker cost for enhanced effects.
+            flashback: If True, cast from the graveyard for the flashback
+                cost.  The spell is exiled instead of going to the graveyard
+                on resolution.
+        """
         player = self.state.players[player_index]
         card = self.state.find_card(instance_id)
 
-        if card is None or card.zone != Zone.HAND:
+        if card is None:
             return False
+
+        # Flashback: cast from graveyard
+        if flashback:
+            if card.zone != Zone.GRAVEYARD:
+                return False
+            if card.card.flashback_cost is None:
+                return False
+        elif card.zone != Zone.HAND:
+            return False
+
         if card.card.is_land:
             return False
 
@@ -191,17 +210,31 @@ class Game:
                         if ward:
                             ward_costs.append((target_card, ward))
 
-        # Check mana payment (base cost + ward costs)
+        # Check mana payment (base cost + kicker + ward costs)
         from mtg_engine.core.mana import ManaCost
         total_ward = ManaCost()
         for _, ward_cost_str in ward_costs:
             total_ward = total_ward + ManaCost.parse(ward_cost_str)
 
-        combined_cost = card.card.cost + total_ward
+        # Flashback uses its own cost instead of the card's mana cost
+        if flashback:
+            base_cost = ManaCost.parse(card.card.flashback_cost)
+        else:
+            base_cost = card.card.cost
+
+        # Add kicker cost if kicked
+        kicker_extra = ManaCost()
+        if kicked:
+            if card.card.kicker_cost is None:
+                return False
+            kicker_extra = ManaCost.parse(card.card.kicker_cost)
+
+        combined_cost = base_cost + kicker_extra + total_ward
         if not player.mana_pool.can_pay(combined_cost):
-            if ward_costs and player.mana_pool.can_pay(card.card.cost):
+            spell_cost = base_cost + kicker_extra
+            if ward_costs and player.mana_pool.can_pay(spell_cost):
                 # Can pay spell cost but not ward — spell is countered
-                player.mana_pool.pay(card.card.cost)
+                player.mana_pool.pay(spell_cost)
                 card.zone = Zone.GRAVEYARD
                 for tc, wc in ward_costs:
                     self._log(f"Ward: {tc.name}'s ward cost {wc} not paid — spell countered")
@@ -215,17 +248,30 @@ class Game:
 
         # Build effects list for the stack
         effects = list(card.card.effects)
+        # Add kicker effects if kicked
+        if kicked:
+            effects.extend(card.card.kicker_effects)
         # Permanents need an enter_battlefield effect so the unified resolver
         # moves them to the battlefield (instead of special-casing in resolve)
         if card.card.card_type not in (CardType.INSTANT, CardType.SORCERY):
             effects.insert(0, {"type": "enter_battlefield"})
+
+        # Track casting mode
+        card.was_kicked = kicked
+        card.cast_with_flashback = flashback
 
         # Put the actual card on the stack
         card.zone = Zone.STACK
         card.effects = effects
         card.targets = targets or []
         self.state.stack.push(card)
-        self._log(f"{player.name} casts {card.name}")
+
+        cast_desc = card.name
+        if kicked:
+            cast_desc += " (kicked)"
+        if flashback:
+            cast_desc += " (flashback)"
+        self._log(f"{player.name} casts {cast_desc}")
 
         # Fire on-cast triggers (cascade, storm, etc.)
         self.state.triggers.check_triggers(
@@ -285,7 +331,11 @@ class Game:
             if not legal_targets:
                 # All targets illegal — spell/ability is countered (fizzles)
                 if is_spell:
-                    item.zone = Zone.GRAVEYARD
+                    # Flashback spells are exiled even when fizzled (CR 702.33a)
+                    if item.cast_with_flashback:
+                        item.zone = Zone.EXILE
+                    else:
+                        item.zone = Zone.GRAVEYARD
                     item.clear_stack_state()
                 else:
                     # Ability fizzled — if source is an instant/sorcery on stack,
@@ -306,10 +356,14 @@ class Game:
             resolved = self._resolve_effect(effect, item)
             result["effects_resolved"].append(resolved)
 
-        # After resolution: move instant/sorcery to graveyard, clear stack state
+        # After resolution: move instant/sorcery to graveyard (or exile for flashback)
         if is_spell:
             if item.card.card_type in (CardType.INSTANT, CardType.SORCERY):
-                item.zone = Zone.GRAVEYARD
+                if item.cast_with_flashback:
+                    item.zone = Zone.EXILE
+                    self._log(f"{item.card_name} is exiled (flashback)")
+                else:
+                    item.zone = Zone.GRAVEYARD
             item.clear_stack_state()
         else:
             # Ability resolved — check if source card is an instant/sorcery on stack
