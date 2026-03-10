@@ -27,6 +27,11 @@ A Magic: The Gathering rules engine for designing and testing custom cards. Defi
 - **Continuous effects**: anthem effects, keyword granting/removing
 - **Kicker**: optional additional cost for enhanced effects
 - **Flashback**: cast from graveyard for alternate cost, exiled on resolution
+- **X spells**: variable mana costs (e.g., Blaze deals X damage)
+- **Hybrid mana**: {W/U} payable with either color
+- **Phyrexian mana**: {R/P} payable with mana or 2 life
+- **Cycling**: discard from hand, pay cost, draw a card
+- **Prowess**: +1/+1 until end of turn whenever you cast a noncreature spell
 - **Format support**: Standard, Modern, Legacy, Vintage, Pioneer, Pauper, Commander (color identity, command zone)
 - **Tokens, multi-type cards, Kindred type, sideboard support**
 
