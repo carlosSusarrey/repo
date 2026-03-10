@@ -40,15 +40,21 @@ class SagaState:
 def setup_saga(
     card_instance: Any,  # CardInstance
     chapters: list[ChapterAbility],
+    add_initial_counter: bool = True,
 ) -> None:
     """Set up a card instance as a saga with chapter abilities.
 
-    CR 714.3a: A saga enters with a lore counter.
+    CR 714.3a: A saga enters the battlefield with a lore counter.
+
+    When *add_initial_counter* is ``False``, the caller is responsible for
+    placing the first lore counter (e.g. via a counter-aware path that
+    respects Doubling Season / Vorinclex effects).
     """
     final = max(ch.chapter for ch in chapters) if chapters else 1
     state = SagaState(chapters=chapters, final_chapter=final)
     card_instance._saga_state = state  # type: ignore[attr-defined]
-    card_instance.counters["lore"] = 1
+    if add_initial_counter:
+        card_instance.counters["lore"] = 1
     state.triggered_chapters.add(0)  # Mark initialization
 
 

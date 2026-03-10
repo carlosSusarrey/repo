@@ -146,6 +146,45 @@ class GameState:
                 if card.card.card_type == CardType.PLANESWALKER:
                     from mtg_engine.core.planeswalker import initialize_loyalty
                     initialize_loyalty(card)
+                # Initialize saga: set up chapters, place initial lore
+                # counter, and trigger chapter 1.
+                # CR 714.3a: As a saga enters the battlefield, its
+                # controller puts a lore counter on it.  This is a
+                # counter placement, so effects that modify counters
+                # (Doubling Season, Vorinclex) apply here.
+                if "Saga" in card.card.subtypes and card.card.chapter_abilities:
+                    from mtg_engine.core.sagas import (
+                        ChapterAbility,
+                        setup_saga,
+                        trigger_chapter,
+                    )
+                    chapters = [
+                        ChapterAbility(
+                            chapter=ch["chapter"],
+                            effects=ch.get("effects", []),
+                            description=ch.get("description", ""),
+                        )
+                        for ch in card.card.chapter_abilities
+                    ]
+                    # Set up saga state without placing the counter —
+                    # we place it explicitly so counter-modifying
+                    # effects can intercept.
+                    setup_saga(card, chapters, add_initial_counter=False)
+                    # Place the initial lore counter.  Future work:
+                    # route through a counter-placement system that
+                    # respects Doubling Season / Vorinclex.
+                    card.counters["lore"] = card.counters.get("lore", 0) + 1
+                    # CR 714.3a: Chapter 1 triggers on ETB
+                    ch1_effects = trigger_chapter(card, 1)
+                    if ch1_effects:
+                        from mtg_engine.core.stack import AbilityOnStack
+                        ability = AbilityOnStack(
+                            source_id=card.instance_id,
+                            controller_index=card.controller_index,
+                            card_name=f"{card.name} chapter 1",
+                            effects=ch1_effects,
+                        )
+                        self.stack.push(ability)
             else:
                 # Reset battlefield state when leaving
                 card.tapped = False
@@ -425,6 +464,13 @@ class GameState:
                 if defense <= 0:
                     self.move_card(card.instance_id, Zone.EXILE)
                     actions.append(f"{card.name} exiled (0 defense counters)")
+
+        # CR 704.5t: Saga with final chapter counter is sacrificed
+        from mtg_engine.core.sagas import is_saga, is_saga_complete
+        for card in self.get_battlefield():
+            if is_saga(card) and is_saga_complete(card):
+                self.move_card(card.instance_id, Zone.GRAVEYARD)
+                actions.append(f"{card.name} is sacrificed (saga complete)")
 
         # CR 704.5d: Tokens not on the battlefield cease to exist
         tokens_to_remove = [

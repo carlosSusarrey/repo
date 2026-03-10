@@ -459,7 +459,7 @@ These are the highest-impact items remaining, in recommended priority order:
 3. **Target legality on resolution** — if all targets are illegal when a spell resolves, counter it
 4. **Replacement effects** — "if ~ would die, instead..." and ETB replacement effects (enters with counters)
 5. **Full layer system** — 7-layer continuous effect ordering for correct P/T and ability interactions
-6. **Sagas** — lore counters and chapter abilities
+6. ~~**Sagas**~~ ✅ — lore counters, chapter abilities, sacrifice SBA, game engine integration
 7. **Kicker / additional costs** — optional extra costs when casting
 8. **Flashback** — cast from graveyard for alternate cost, then exile
 9. **X spells** — variable mana costs

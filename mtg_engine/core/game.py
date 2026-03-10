@@ -879,11 +879,18 @@ class Game:
         self._log(f"Untap step - {self.state.active_player.name}")
 
     def step_draw(self) -> None:
-        """Draw step: active player draws a card."""
+        """Draw step: active player draws a card.
+
+        CR 714.3b: After the active player's draw step begins, each saga
+        they control gains a lore counter and triggers the corresponding
+        chapter ability.
+        """
         if self.state.turn_number == 1 and self.state.active_player_index == 0:
             self._log("First player skips draw on turn 1")
             return
         self.draw_card(self.state.active_player_index)
+        # Advance sagas for active player
+        self._advance_sagas(self.state.active_player_index)
 
     def step_cleanup(self) -> None:
         """Cleanup step: discard to hand size, clear damage, clear end-of-turn effects."""
@@ -904,6 +911,30 @@ class Game:
 
         for p in self.state.players:
             p.mana_pool.empty()
+
+    def _advance_sagas(self, player_index: int) -> None:
+        """Add a lore counter to each saga the player controls and trigger chapters.
+
+        CR 714.3b: After your draw step, put a lore counter on each saga you
+        control.  When the lore counter is placed, the corresponding chapter
+        ability triggers and goes on the stack.
+        """
+        from mtg_engine.core.sagas import add_lore_counter, is_saga
+
+        for card in self.state.get_battlefield(player_index):
+            if not is_saga(card):
+                continue
+            triggered_effects = add_lore_counter(card)
+            if triggered_effects:
+                chapter_num = card.counters.get("lore", 0)
+                ability = AbilityOnStack(
+                    source_id=card.instance_id,
+                    controller_index=card.controller_index,
+                    card_name=f"{card.name} chapter {chapter_num}",
+                    effects=triggered_effects,
+                )
+                self.state.stack.push(ability)
+                self._log(f"{card.name} chapter {chapter_num} triggers")
 
     def advance_step(self) -> tuple[Phase, Step]:
         """Advance to the next step/phase. Returns the new (phase, step)."""

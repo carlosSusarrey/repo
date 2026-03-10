@@ -31,6 +31,7 @@ class Card:
     activated_abilities: list[dict[str, Any]] = field(default_factory=list)
     keyword_params: dict[Keyword, Any] = field(default_factory=dict)
     replacement_effects: list[dict[str, Any]] = field(default_factory=list)
+    chapter_abilities: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Ensure card_types list is synced with card_type."""
