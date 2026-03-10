@@ -9,6 +9,7 @@ from mtg_engine.core.card import CardInstance
 from mtg_engine.core.combat import CombatState
 from mtg_engine.core.continuous_effects import ContinuousEffectManager
 from mtg_engine.core.enums import Phase, Step, Zone, SuperType, CardType
+from mtg_engine.core.events import EventBus, GameEvent, ZoneChangeEventData
 from mtg_engine.core.keywords import Keyword
 from mtg_engine.core.player import Player
 from mtg_engine.core.replacement_effects import ReplacementEffectManager, ReplacementType
@@ -31,6 +32,7 @@ class GameState:
     replacement_effects: ReplacementEffectManager = field(
         default_factory=ReplacementEffectManager
     )
+    event_bus: EventBus = field(init=False)
     active_player_index: int = 0
     priority_player_index: int = 0
     phase: Phase = Phase.BEGINNING
@@ -42,6 +44,9 @@ class GameState:
     players_passed: set[int] = field(default_factory=set)
     # Planeswalker loyalty tracking (IDs that activated this turn)
     loyalty_activated_this_turn: set[str] = field(default_factory=set)
+
+    def __post_init__(self) -> None:
+        self.event_bus = EventBus(self.triggers, self.replacement_effects)
 
     @property
     def active_player(self) -> Player:
@@ -113,24 +118,22 @@ class GameState:
                 ``None`` means the position is unspecified (e.g. shuffle into
                 library) — no library-position trigger fires.
         """
-        from mtg_engine.core.triggers import TriggerEvent
-
         card = self.find_card(instance_id)
         if card:
             old_zone = card.zone
             card.zone = to_zone
+            event_data = {
+                "card_id": card.instance_id, "card": card,
+                "player_index": card.controller_index,
+                "from_zone": old_zone,
+            }
             if to_zone == Zone.BATTLEFIELD:
                 # Register this card's replacement effects before ETB check
                 # so self-replacements (enters with counters, etc.) are active
                 self._register_replacement_effects(card)
                 # Check ETB replacement effects (enters tapped, enters with counters)
-                etb_event = {
-                    "card_id": card.instance_id, "card": card,
-                    "player_index": card.controller_index,
-                    "from_zone": old_zone,
-                }
-                etb_result = self.replacement_effects.check_replacement(
-                    ReplacementType.ENTER_BATTLEFIELD, etb_event,
+                etb_result = self.event_bus.emit_replacement_only(
+                    GameEvent.ENTERS_BATTLEFIELD, event_data,
                 )
                 if etb_result is not None:
                     # Apply ETB modifications from replacement effects
@@ -203,54 +206,33 @@ class GameState:
                     # Remove continuous and replacement effects from this source
                     self.continuous_effects.remove_effects_from(instance_id)
                     self.replacement_effects.remove_effects_from(instance_id)
-                    # Fire LEAVES_BATTLEFIELD triggers
-                    # Pass the card that just left so its own LTB triggers can fire
-                    self.triggers.check_triggers(
-                        TriggerEvent.LEAVES_BATTLEFIELD,
-                        {"card_id": card.instance_id, "card": card,
-                         "player_index": card.controller_index},
-                        self.get_battlefield(),
-                        [card],
+                    # Fire LEAVES_BATTLEFIELD triggers via EventBus
+                    self.event_bus.emit_triggers_only(
+                        GameEvent.LEAVES_BATTLEFIELD, event_data,
+                        self.get_battlefield(), [card],
                     )
 
             # Fire zone-destination triggers (from any origin zone)
-            event_data = {
-                "card_id": card.instance_id, "card": card,
-                "player_index": card.controller_index,
-                "from_zone": old_zone,
+            _ZONE_TRIGGER_MAP = {
+                Zone.GRAVEYARD: GameEvent.ENTERS_GRAVEYARD,
+                Zone.EXILE: GameEvent.IS_EXILED,
+                Zone.HAND: GameEvent.ENTERS_HAND,
             }
-            if to_zone == Zone.GRAVEYARD:
-                self.triggers.check_triggers(
-                    TriggerEvent.ENTERS_GRAVEYARD,
-                    event_data,
-                    self.get_battlefield(),
-                    [card],
-                )
-            elif to_zone == Zone.EXILE:
-                self.triggers.check_triggers(
-                    TriggerEvent.IS_EXILED,
-                    event_data,
-                    self.get_battlefield(),
-                    [card],
-                )
-            elif to_zone == Zone.HAND:
-                self.triggers.check_triggers(
-                    TriggerEvent.ENTERS_HAND,
-                    event_data,
-                    self.get_battlefield(),
-                    [card],
+            dest_event = _ZONE_TRIGGER_MAP.get(to_zone)
+            if dest_event is not None:
+                self.event_bus.emit_triggers_only(
+                    dest_event, event_data,
+                    self.get_battlefield(), [card],
                 )
             elif to_zone == Zone.LIBRARY and library_position is not None:
                 lib_event = (
-                    TriggerEvent.PUT_ON_TOP_LIBRARY
+                    GameEvent.PUT_ON_TOP_LIBRARY
                     if library_position == "top"
-                    else TriggerEvent.PUT_ON_BOTTOM_LIBRARY
+                    else GameEvent.PUT_ON_BOTTOM_LIBRARY
                 )
-                self.triggers.check_triggers(
-                    lib_event,
-                    event_data,
-                    self.get_battlefield(),
-                    [card],
+                self.event_bus.emit_triggers_only(
+                    lib_event, event_data,
+                    self.get_battlefield(), [card],
                 )
         return card
 
@@ -276,6 +258,7 @@ class GameState:
         )
 
         _TYPE_MAP = {
+            # Old-style replacement names
             "damage": RT.DAMAGE,
             "draw": RT.DRAW,
             "enter_battlefield": RT.ENTER_BATTLEFIELD,
@@ -284,6 +267,11 @@ class GameState:
             "counter_placed": RT.COUNTER_PLACED,
             "life_gain": RT.LIFE_GAIN,
             "zone_change": RT.ZONE_CHANGE,
+            # Unified event names (from parser normalization)
+            "enters_battlefield": RT.ENTER_BATTLEFIELD,
+            "dies": RT.DIE,
+            "draw_card": RT.DRAW,
+            "gain_life": RT.LIFE_GAIN,
         }
 
         for repl_def in card.card.replacement_effects:
@@ -370,8 +358,6 @@ class GameState:
 
     def check_state_based_actions(self) -> list[str]:
         """Check and apply state-based actions. Returns descriptions of actions taken."""
-        from mtg_engine.core.triggers import TriggerEvent
-
         actions = []
         # Track creatures that die during SBAs so we can fire DIES triggers
         died_creatures: list[CardInstance] = []
@@ -403,12 +389,12 @@ class GameState:
                         reason = "lethal damage"
 
                 if should_die:
-                    # Check die replacement effects
+                    # Check die replacement effects via EventBus
                     die_event = {"card_id": card.instance_id, "card": card,
                                  "player_index": card.controller_index,
                                  "cause": reason}
-                    die_result = self.replacement_effects.check_replacement(
-                        ReplacementType.DIE, die_event)
+                    die_result = self.event_bus.emit_replacement_only(
+                        GameEvent.DIES, die_event)
                     if die_result is None:
                         actions.append(f"{card.name}'s death prevented ({reason})")
                         card.damage_marked = 0  # Reset damage since death was prevented
@@ -506,8 +492,8 @@ class GameState:
         # Fire DIES triggers for all creatures that died during SBAs
         for card in died_creatures:
             graveyard = self.get_zone(card.owner_index, Zone.GRAVEYARD)
-            self.triggers.check_triggers(
-                TriggerEvent.DIES,
+            self.event_bus.emit_triggers_only(
+                GameEvent.DIES,
                 {"card_id": card.instance_id, "card": card,
                  "player_index": card.controller_index},
                 self.get_battlefield(),

@@ -52,6 +52,7 @@ The following features have been built across Phases 1–4:
 - Types: DAMAGE, DRAW, ENTER_BATTLEFIELD, DIE, DISCARD, COUNTER_PLACED, LIFE_GAIN, ZONE_CHANGE
 - ETB replacement effects (enters tapped, enters with counters)
 - Die replacement effects ("if ~ would die, instead...")
+- Centralized EventBus dispatches all events through unified GameEvent enum, routing to both trigger and replacement managers
 
 **Continuous Effects & Layer System**
 - Full 7-layer system: COPY, CONTROL, TEXT, TYPE, COLOR, ABILITY, POWER_TOUGHNESS

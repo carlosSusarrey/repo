@@ -49,8 +49,8 @@ loyalty_prop: "loyalty:" NUMBER
 rules_prop: "rules:" QUOTED_STRING
 effect_prop: "effect:" effect
 keywords_prop: "keywords:" keyword_list
-triggered_prop: "when(" TRIGGER_EVENT "," source_filter_list "):" effect
-             | "when(" TRIGGER_EVENT "):" effect
+triggered_prop: "when(" GAME_EVENT "," source_filter_list "):" effect
+             | "when(" GAME_EVENT "):" effect
 source_filter_list: SOURCE_FILTER+
 activated_prop: "activate(" mana_cost "):" effect
 loyalty_ability_prop: "loyalty(" SIGNED_NUMBER "):" effect
@@ -63,8 +63,8 @@ morph_prop: "morph:" mana_cost
 disguise_prop: "disguise:" mana_cost
 transform_prop: "transform:" QUOTED_STRING
 back_face_prop: "back_face" "{" card_body "}"
-replacement_prop: "replace(" REPLACEMENT_TYPE "):" replacement_action
-               | "replace(" REPLACEMENT_TYPE "," REPLACEMENT_SCOPE "):" replacement_action
+replacement_prop: "replace(" GAME_EVENT "):" replacement_action
+               | "replace(" GAME_EVENT "," REPLACEMENT_SCOPE "):" replacement_action
 replacement_action: "enter_tapped"                    -> repl_enter_tapped
                   | "add_counters(" QUOTED_STRING "," NUMBER ")"  -> repl_add_counters
                   | "prevent"                          -> repl_prevent
@@ -150,13 +150,15 @@ KEYWORD_NAME: "flying" | "reach" | "first_strike" | "double_strike" | "deathtouc
             | "horsemanship" | "landwalk" | "flanking"
             | "morph" | "disguise" | "transform"
             | "toxic" | "wither" | "infect" | "undying" | "persist"
-TRIGGER_EVENT: "enters_battlefield" | "leaves_battlefield" | "dies"
-             | "enters_graveyard" | "is_exiled"
-             | "enters_hand" | "put_on_top" | "put_on_bottom"
-             | "attacks" | "blocks" | "deals_combat_damage_to_player"
-             | "begin_upkeep" | "end_step" | "land_enters" | "cast"
-             | "transforms" | "level_up"
-REPLACEMENT_TYPE: "enter_battlefield" | "die" | "damage" | "draw" | "life_gain" | "discard" | "zone_change"
+GAME_EVENT: "enters_battlefield" | "leaves_battlefield" | "dies"
+          | "enters_graveyard" | "is_exiled"
+          | "enters_hand" | "put_on_top" | "put_on_bottom"
+          | "attacks" | "blocks" | "deals_combat_damage_to_player"
+          | "begin_upkeep" | "end_step" | "land_enters" | "cast"
+          | "transforms" | "level_up"
+          | "damage" | "draw_card" | "gain_life" | "lose_life"
+          | "discard" | "counter_placed" | "zone_change"
+          | "enter_battlefield" | "die" | "draw" | "life_gain"
 REPLACEMENT_SCOPE: "self" | "any"
 SOURCE_FILTER: "self" | "you" | "any" | "another"
              | "creature" | "artifact" | "enchantment" | "planeswalker"

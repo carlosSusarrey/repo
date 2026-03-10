@@ -22,9 +22,8 @@ from mtg_engine.core.keywords import (
 from mtg_engine.core.mana_abilities import can_tap_for_mana, tap_for_mana
 from mtg_engine.core.planeswalker import activate_loyalty, can_activate_loyalty
 from mtg_engine.core.player import Player
-from mtg_engine.core.replacement_effects import ReplacementType
+from mtg_engine.core.events import GameEvent
 from mtg_engine.core.stack import AbilityOnStack, Stackable, Stack
-from mtg_engine.core.triggers import TriggerEvent
 
 
 # Turn structure: (phase, step) pairs in order
@@ -88,10 +87,9 @@ class Game:
 
     def draw_card(self, player_index: int) -> CardInstance | None:
         """Draw a card for a player."""
-        # Check draw replacement effects
-        draw_event = {"player_index": player_index}
-        draw_result = self.state.replacement_effects.check_replacement(
-            ReplacementType.DRAW, draw_event)
+        # Check draw replacement effects via EventBus
+        draw_result = self.state.event_bus.emit_replacement_only(
+            GameEvent.DRAW_CARD, {"player_index": player_index})
         if draw_result is None:
             self._log(f"{self.state.players[player_index].name}'s draw prevented")
             return None
@@ -133,20 +131,13 @@ class Game:
         player.land_plays_remaining -= 1
         self._log(f"{player.name} plays {card.name}")
 
-        # Trigger landfall
-        self.state.triggers.check_triggers(
-            TriggerEvent.LAND_ENTERS,
-            {"card_id": card.instance_id, "card": card, "player_index": player_index,
-             "from_zone": Zone.HAND},
-            self.state.get_battlefield(),
-        )
-        # ETB trigger
-        self.state.triggers.check_triggers(
-            TriggerEvent.ENTERS_BATTLEFIELD,
-            {"card_id": card.instance_id, "card": card, "player_index": player_index,
-             "from_zone": Zone.HAND},
-            self.state.get_battlefield(),
-        )
+        # Trigger landfall + ETB via EventBus
+        land_event = {"card_id": card.instance_id, "card": card,
+                      "player_index": player_index, "from_zone": Zone.HAND}
+        self.state.event_bus.emit_triggers_only(
+            GameEvent.LAND_ENTERS, land_event, self.state.get_battlefield())
+        self.state.event_bus.emit_triggers_only(
+            GameEvent.ENTERS_BATTLEFIELD, land_event, self.state.get_battlefield())
         return True
 
     def cast_spell(self, player_index: int, instance_id: str,
@@ -273,9 +264,9 @@ class Game:
             cast_desc += " (flashback)"
         self._log(f"{player.name} casts {cast_desc}")
 
-        # Fire on-cast triggers (cascade, storm, etc.)
-        self.state.triggers.check_triggers(
-            TriggerEvent.CAST,
+        # Fire on-cast triggers (cascade, storm, etc.) via EventBus
+        self.state.event_bus.emit_triggers_only(
+            GameEvent.CAST,
             {"card_id": card.instance_id, "card": card,
              "player_index": player_index},
             self.state.get_battlefield(),
@@ -418,8 +409,8 @@ class Game:
                     if player.name == target_id:
                         dmg_event = {"amount": amount, "target": target_id,
                                      "source_id": item.source_id, "is_combat": False}
-                        dmg_result = self.state.replacement_effects.check_replacement(
-                            ReplacementType.DAMAGE, dmg_event)
+                        dmg_result = self.state.event_bus.emit_replacement_only(
+                            GameEvent.DAMAGE, dmg_event)
                         if dmg_result is None:
                             self._log(f"Damage to {player.name} prevented")
                             continue
@@ -454,8 +445,8 @@ class Game:
                         continue
                     dmg_event = {"amount": amount, "target": target_id,
                                  "source_id": item.source_id, "is_combat": False}
-                    dmg_result = self.state.replacement_effects.check_replacement(
-                        ReplacementType.DAMAGE, dmg_event)
+                    dmg_result = self.state.event_bus.emit_replacement_only(
+                        GameEvent.DAMAGE, dmg_event)
                     if dmg_result is None:
                         self._log(f"Damage to {target_card.name} prevented")
                         continue
@@ -480,8 +471,8 @@ class Game:
                                          "card": target_card,
                                          "player_index": target_card.controller_index,
                                          "cause": "destroy"}
-                            die_result = self.state.replacement_effects.check_replacement(
-                                ReplacementType.DIE, die_event)
+                            die_result = self.state.event_bus.emit_replacement_only(
+                                GameEvent.DIES, die_event)
                             if die_result is None:
                                 self._log(f"{target_card.name}'s death prevented")
                                 result["success"] = True
@@ -490,8 +481,8 @@ class Game:
                         result["success"] = True
                         self._log(f"{item.card_name} destroys {target_card.name}")
                         if target_card.card.is_creature:
-                            self.state.triggers.check_triggers(
-                                TriggerEvent.DIES,
+                            self.state.event_bus.emit_triggers_only(
+                                GameEvent.DIES,
                                 {"card_id": target_card.instance_id, "card": target_card,
                                  "player_index": target_card.controller_index},
                                 self.state.get_battlefield(),
@@ -509,8 +500,8 @@ class Game:
         elif effect_type == "gain_life":
             amount = effect.get("amount", 0)
             life_event = {"amount": amount, "player_index": item.controller_index}
-            life_result = self.state.replacement_effects.check_replacement(
-                ReplacementType.LIFE_GAIN, life_event)
+            life_result = self.state.event_bus.emit_replacement_only(
+                GameEvent.GAIN_LIFE, life_event)
             if life_result is not None:
                 actual = life_result.get("amount", amount)
                 if actual > 0:
@@ -662,8 +653,8 @@ class Game:
                                      "card": source_card,
                                      "player_index": source_card.controller_index,
                                      "cause": "sacrifice"}
-                        die_result = self.state.replacement_effects.check_replacement(
-                            ReplacementType.DIE, die_event)
+                        die_result = self.state.event_bus.emit_replacement_only(
+                            GameEvent.DIES, die_event)
                         if die_result is None:
                             self._log(f"{source_card.name}'s death prevented")
                             death_prevented = True
@@ -671,8 +662,8 @@ class Game:
                         self.state.move_card(item.source_id, Zone.GRAVEYARD)
                         self._log(f"{source_card.name} is sacrificed")
                         if is_creature:
-                            self.state.triggers.check_triggers(
-                                TriggerEvent.DIES,
+                            self.state.event_bus.emit_triggers_only(
+                                GameEvent.DIES,
                                 {"card_id": source_card.instance_id, "card": source_card,
                                  "player_index": source_card.controller_index},
                                 self.state.get_battlefield(),
@@ -690,8 +681,8 @@ class Game:
                                          "card": target_card,
                                          "player_index": target_card.controller_index,
                                          "cause": "sacrifice"}
-                            die_result = self.state.replacement_effects.check_replacement(
-                                ReplacementType.DIE, die_event)
+                            die_result = self.state.event_bus.emit_replacement_only(
+                                GameEvent.DIES, die_event)
                             if die_result is None:
                                 self._log(f"{target_card.name}'s death prevented")
                                 result["success"] = True
@@ -700,8 +691,8 @@ class Game:
                         result["success"] = True
                         self._log(f"{target_card.name} is sacrificed")
                         if is_creature:
-                            self.state.triggers.check_triggers(
-                                TriggerEvent.DIES,
+                            self.state.event_bus.emit_triggers_only(
+                                GameEvent.DIES,
                                 {"card_id": target_card.instance_id, "card": target_card,
                                  "player_index": target_card.controller_index},
                                 self.state.get_battlefield(),
@@ -727,9 +718,9 @@ class Game:
                 # Auras attach to their target on resolution
                 if "Aura" in source_card.card.subtypes and item.targets:
                     self.attach_aura(source_card.instance_id, item.targets[0])
-                # ETB trigger
-                self.state.triggers.check_triggers(
-                    TriggerEvent.ENTERS_BATTLEFIELD,
+                # ETB trigger via EventBus
+                self.state.event_bus.emit_triggers_only(
+                    GameEvent.ENTERS_BATTLEFIELD,
                     {"card_id": source_card.instance_id, "card": source_card,
                      "player_index": source_card.controller_index,
                      "from_zone": from_zone},
@@ -780,9 +771,9 @@ class Game:
         self.state.cards.append(token_instance)
         self._log(f"Token {name} {power}/{toughness} created for {self.state.players[controller_index].name}")
 
-        # ETB trigger
-        self.state.triggers.check_triggers(
-            TriggerEvent.ENTERS_BATTLEFIELD,
+        # ETB trigger via EventBus
+        self.state.event_bus.emit_triggers_only(
+            GameEvent.ENTERS_BATTLEFIELD,
             {"card_id": token_instance.instance_id, "card": token_instance,
              "player_index": controller_index,
              "from_zone": None},
@@ -806,8 +797,8 @@ class Game:
                 if not card.has_keyword(Keyword.VIGILANCE):
                     card.tap()
                 self._log(f"{card.name} attacks")
-                self.state.triggers.check_triggers(
-                    TriggerEvent.ATTACKS,
+                self.state.event_bus.emit_triggers_only(
+                    GameEvent.ATTACKS,
                     {"card_id": aid, "card": card,
                      "player_index": card.controller_index},
                     self.state.get_battlefield(),
@@ -881,8 +872,8 @@ class Game:
                 log_entries.append(f"{source_name} deals {dmg.amount} combat damage to {player.name}")
 
                 if source:
-                    self.state.triggers.check_triggers(
-                        TriggerEvent.DEALS_COMBAT_DAMAGE_TO_PLAYER,
+                    self.state.event_bus.emit_triggers_only(
+                        GameEvent.DEALS_COMBAT_DAMAGE_TO_PLAYER,
                         {"card_id": source.instance_id, "card": source,
                          "player_index": player_idx, "amount": dmg.amount},
                         self.state.get_battlefield(),
