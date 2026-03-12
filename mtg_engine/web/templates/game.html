@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTG Rules Engine - Game</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; }
+        header { background: #16213e; padding: 0.8rem 1.5rem; border-bottom: 2px solid #e94560; display: flex; justify-content: space-between; align-items: center; }
+        header h1 { color: #e94560; font-size: 1.3rem; }
+        header a { color: #80c0ff; text-decoration: none; font-size: 0.9rem; }
+
+        .game-layout { display: grid; grid-template-columns: 1fr 180px 260px; min-height: calc(100vh - 52px); }
+        .board { padding: 0.8rem; overflow-y: auto; }
+        .sidebar { background: #16213e; padding: 0.8rem; border-left: 1px solid #333; overflow-y: auto; }
+        .log-panel { background: #0f0f1e; padding: 0.8rem; border-left: 1px solid #333; overflow-y: auto; max-height: calc(100vh - 52px); }
+
+        .turn-info { background: #0f3460; padding: 0.5rem 0.8rem; border-radius: 6px; margin-bottom: 0.8rem; font-size: 0.82rem; text-align: center; }
+        .turn-info strong { color: #f0c040; }
+
+        .player-area { margin-bottom: 1rem; padding: 0.7rem; background: #16213e; border-radius: 8px; border: 1px solid #333; }
+        .player-area.active { border-color: #e94560; }
+        .player-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem; }
+        .player-name { font-weight: bold; font-size: 0.95rem; }
+        .player-life { color: #95d5b2; font-weight: bold; }
+        .mana-pool { font-size: 0.78rem; color: #a0a0b0; margin-bottom: 0.3rem; }
+        .mana-pool span { margin-right: 5px; }
+        .mana-W { color: #fff8dc; } .mana-U { color: #6ca0dc; } .mana-B { color: #b0b0b0; }
+        .mana-R { color: #e94560; } .mana-G { color: #5cb85c; } .mana-C { color: #c0c0c0; }
+
+        .zone-label { font-size: 0.7rem; color: #888; text-transform: uppercase; margin: 0.3rem 0 0.15rem; letter-spacing: 0.5px; }
+        .card-row { display: flex; flex-wrap: wrap; gap: 3px; min-height: 22px; }
+
+        .card-chip { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 4px; font-size: 0.76rem; cursor: pointer; border: 1px solid #444; transition: all 0.12s; white-space: nowrap; }
+        .card-chip:hover { border-color: #e94560; transform: translateY(-1px); }
+        .card-chip.selected { border-color: #f0c040; background: #2a2a4e; box-shadow: 0 0 4px rgba(240,192,64,0.3); }
+        .card-chip.target { border-color: #e94560; background: #3a1f2e; box-shadow: 0 0 4px rgba(233,69,96,0.3); }
+        .card-chip.tapped { opacity: 0.55; font-style: italic; }
+        .card-chip.land { background: #1b3a2f; }
+        .card-chip.creature { background: #2a1f3e; }
+        .card-chip.spell { background: #1f2a3e; }
+        .card-chip .pt { color: #f0c040; font-weight: bold; }
+        .card-chip .cost { color: #a0a0b0; font-size: 0.68rem; }
+        .card-chip .kw { color: #80c0ff; font-size: 0.63rem; }
+
+        .stack-item { padding: 3px 7px; margin: 2px 0; background: #2a1f3e; border-radius: 3px; font-size: 0.78rem; border-left: 3px solid #e94560; }
+
+        .actions { display: flex; flex-direction: column; gap: 3px; }
+        .actions h3 { color: #e94560; font-size: 0.8rem; margin: 6px 0 3px; }
+        .btn { padding: 5px 8px; background: #0f3460; color: #e0e0e0; border: 1px solid #444; border-radius: 4px; font-size: 0.78rem; cursor: pointer; text-align: left; transition: background 0.12s; }
+        .btn:hover { background: #1a4a7a; }
+        .btn.primary { background: #e94560; border-color: #e94560; color: white; }
+        .btn.primary:hover { background: #c73a52; }
+
+        .message { padding: 5px 10px; background: #1b4332; color: #95d5b2; border-radius: 4px; font-size: 0.78rem; margin-bottom: 0.6rem; min-height: 24px; }
+        .message.error { background: #4a1526; color: #f4978e; }
+
+        .log-panel h3 { color: #e94560; font-size: 0.8rem; margin-bottom: 0.4rem; }
+        .log-entry { font-size: 0.72rem; color: #a0a0b0; padding: 1px 0; font-family: monospace; }
+        .log-entry.new { color: #e0e0e0; }
+
+        .x-input { width: 40px; padding: 3px; background: #0f3460; color: #e0e0e0; border: 1px solid #444; border-radius: 3px; font-size: 0.78rem; }
+        .hint { font-size: 0.68rem; color: #666; margin-top: 2px; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>MTG Rules Engine</h1>
+        <a href="/">Card Editor</a>
+    </header>
+
+    <div class="game-layout">
+        <div class="board" id="board">
+            <div class="message" id="message">Loading...</div>
+            <div class="turn-info" id="turn-info"></div>
+            <div id="players-area"></div>
+        </div>
+
+        <div class="sidebar">
+            <div class="actions">
+                <h3>Game Flow</h3>
+                <button class="btn primary" onclick="doAction('new_game')">New Game</button>
+                <button class="btn" onclick="doAction('next_step')">Next Step</button>
+                <button class="btn" onclick="doAction('next_turn')">Next Turn</button>
+                <button class="btn" onclick="doAction('pass_priority')">Pass Priority</button>
+
+                <h3>Actions</h3>
+                <button class="btn" onclick="playSelected('play_land')">Play Land</button>
+                <button class="btn" onclick="playSelected('tap')">Tap for Mana</button>
+                <button class="btn" onclick="castSelected()">Cast Spell</button>
+                <button class="btn" onclick="doAction('resolve')">Resolve Top</button>
+
+                <h3>Combat</h3>
+                <button class="btn" onclick="attackSelected()">Attack</button>
+                <button class="btn" onclick="doAction('combat_damage')">Combat Damage</button>
+
+                <h3>X Value</h3>
+                <input type="number" class="x-input" id="x-value" value="0" min="0">
+                <div class="hint">Click = select, Shift+click = target</div>
+
+                <div style="margin-top: 10px;">
+                    <h3>Stack</h3>
+                    <div id="stack-items"><span style="font-size:0.78rem;color:#666">empty</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="log-panel">
+            <h3>Game Log</h3>
+            <div id="log"></div>
+        </div>
+    </div>
+
+    <script>
+        let state = null;
+        let selectedCards = new Set();
+        let targetCards = new Set();
+
+        async function fetchState() {
+            const r = await fetch('/api/game/state');
+            state = await r.json();
+            render();
+        }
+
+        async function doAction(action, extra = {}) {
+            if (action === 'new_game') {
+                const r = await fetch('/api/game/new', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+                state = await r.json();
+                selectedCards.clear(); targetCards.clear();
+                setMessage('New game started');
+                render(); return;
+            }
+            const body = {action, ...extra};
+            const r = await fetch('/api/game/action', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+            const data = await r.json();
+            state = data;
+            setMessage(data.message);
+            selectedCards.clear(); targetCards.clear();
+            render();
+        }
+
+        function playSelected(action) {
+            if (selectedCards.size !== 1) { setMessage('Select exactly one card', true); return; }
+            doAction(action, {card_id: [...selectedCards][0]});
+        }
+
+        function castSelected() {
+            if (selectedCards.size !== 1) { setMessage('Select a card to cast', true); return; }
+            const xVal = parseInt(document.getElementById('x-value').value) || 0;
+            doAction('cast', {card_id: [...selectedCards][0], targets: [...targetCards], x_value: xVal});
+        }
+
+        function attackSelected() {
+            if (selectedCards.size === 0) { setMessage('Select creatures to attack with', true); return; }
+            doAction('attack', {attacker_ids: [...selectedCards]});
+        }
+
+        function toggleCard(id, ev) {
+            if (ev && ev.shiftKey) {
+                if (targetCards.has(id)) targetCards.delete(id); else targetCards.add(id);
+            } else {
+                if (selectedCards.has(id)) selectedCards.delete(id); else selectedCards.add(id);
+            }
+            render();
+        }
+
+        function setMessage(msg, isError = false) {
+            const el = document.getElementById('message');
+            el.textContent = msg;
+            el.className = isError ? 'message error' : 'message';
+        }
+
+        function renderCard(card) {
+            const cls = ['card-chip'];
+            if (card.is_land) cls.push('land');
+            else if (card.is_creature) cls.push('creature');
+            else cls.push('spell');
+            if (card.tapped) cls.push('tapped');
+            if (selectedCards.has(card.id)) cls.push('selected');
+            if (targetCards.has(card.id)) cls.push('target');
+
+            let inner = `<span>${card.name}</span>`;
+            if (card.cost && card.cost !== '{0}' && !card.is_land) inner += ` <span class="cost">${card.cost}</span>`;
+            if (card.power !== undefined) inner += ` <span class="pt">${card.power}/${card.toughness}</span>`;
+            if (card.damage) inner += ` <span style="color:#e94560">(${card.damage}dmg)</span>`;
+            if (card.keywords && card.keywords.length) inner += ` <span class="kw">${card.keywords.join(',')}</span>`;
+            if (card.tapped) inner += ' <span style="color:#888;font-size:0.65rem">(T)</span>';
+
+            return `<div class="${cls.join(' ')}" onclick="toggleCard('${card.id}', event)">${inner}</div>`;
+        }
+
+        function render() {
+            if (!state) return;
+
+            document.getElementById('turn-info').innerHTML =
+                `Turn <strong>${state.turn}</strong> &middot; ${state.phase} / ${state.step} &middot; Active: <strong>${state.active_player}</strong> &middot; Priority: ${state.priority_player}`;
+
+            let html = '';
+            state.players.forEach((p, i) => {
+                const act = p.is_active ? ' active' : '';
+                const mana = Object.entries(p.mana).filter(([,v]) => v > 0).map(([k,v]) => `<span class="mana-${k}">${k}:${v}</span>`).join('') || '<span>empty</span>';
+
+                html += `<div class="player-area${act}">`;
+                html += `<div class="player-header"><span class="player-name">${p.name}</span><span class="player-life">${p.life} life</span></div>`;
+                html += `<div class="mana-pool">Mana: ${mana}</div>`;
+
+                if (p.lands && p.lands.length)
+                    html += `<div class="zone-label">Lands</div><div class="card-row">${p.lands.map(renderCard).join('')}</div>`;
+                if (p.permanents && p.permanents.length)
+                    html += `<div class="zone-label">Creatures / Permanents</div><div class="card-row">${p.permanents.map(renderCard).join('')}</div>`;
+                if (p.hand)
+                    html += `<div class="zone-label">Hand (${p.hand.length})</div><div class="card-row">${p.hand.map(renderCard).join('')}</div>`;
+                else
+                    html += `<div class="zone-label">Hand: ${p.hand_count} cards</div>`;
+                if (p.graveyard && p.graveyard.length)
+                    html += `<div class="zone-label">Graveyard</div><div style="font-size:0.75rem;color:#888">${p.graveyard.map(c=>c.name).join(', ')}</div>`;
+
+                html += '</div>';
+            });
+            document.getElementById('players-area').innerHTML = html;
+
+            const stackHtml = state.stack.length
+                ? state.stack.map(s => `<div class="stack-item">${s.name}</div>`).join('')
+                : '<span style="font-size:0.78rem;color:#666">empty</span>';
+            document.getElementById('stack-items').innerHTML = stackHtml;
+
+            const logHtml = (state.log || []).map((entry, i) =>
+                `<div class="log-entry${i >= state.log.length - 3 ? ' new' : ''}">${entry}</div>`
+            ).join('');
+            const logEl = document.getElementById('log');
+            logEl.innerHTML = logHtml;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        fetchState();
+    </script>
+</body>
+</html>

@@ -34,9 +34,15 @@ def cmd_parse(args: argparse.Namespace) -> None:
         print()
 
 
+def cmd_play(args: argparse.Namespace) -> None:
+    """Launch interactive game mode."""
+    from mtg_engine.cli.interactive import run_interactive
+    run_interactive()
+
+
 def cmd_simulate(args: argparse.Namespace) -> None:
-    """Run a quick simulation with sample cards."""
-    # Create some sample cards for a quick demo
+    """Run a quick non-interactive simulation with sample cards."""
+    from mtg_engine.core.enums import Zone
     bolt = Card(
         name="Lightning Bolt",
         card_type=CardType.INSTANT,
@@ -61,22 +67,11 @@ def cmd_simulate(args: argparse.Namespace) -> None:
     game.draw_opening_hands()
 
     print("=== Game Simulation ===\n")
-    print("Players:")
     for i, player in enumerate(game.state.players):
-        hand = game.state.get_zone(i, zone=__import__("mtg_engine.core.enums", fromlist=["Zone"]).Zone.HAND)
-        print(f"  {player.name}: {player.life} life, {len(hand)} cards in hand")
-
-    print("\nHands:")
-    for i, player in enumerate(game.state.players):
-        hand = game.state.get_zone(i, zone=__import__("mtg_engine.core.enums", fromlist=["Zone"]).Zone.HAND)
+        hand = game.state.get_zone(i, Zone.HAND)
         cards_str = ", ".join(c.name for c in hand)
-        print(f"  {player.name}: {cards_str}")
-
-    print("\nGame log:")
-    for entry in game.log:
-        print(f"  {entry}")
-
-    print("\nSimulation ready. Full interactive mode coming soon!")
+        print(f"  {player.name}: {player.life} life | Hand: {cards_str}")
+    print("\nUse 'mtg play' for interactive mode.")
 
 
 def cmd_inspect(args: argparse.Namespace) -> None:
@@ -117,6 +112,9 @@ def main() -> None:
     inspect_parser = subparsers.add_parser("inspect", help="Inspect inline card DSL")
     inspect_parser.add_argument("text", help="Card DSL text to parse")
 
+    # play command
+    subparsers.add_parser("play", help="Play an interactive game")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -127,6 +125,7 @@ def main() -> None:
         "parse": cmd_parse,
         "simulate": cmd_simulate,
         "inspect": cmd_inspect,
+        "play": cmd_play,
     }
     commands[args.command](args)
 
