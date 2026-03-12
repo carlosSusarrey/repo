@@ -91,7 +91,7 @@ The following features have been built across Phases 1–4:
 - Sagas: ETB setup, lore counter advancement, chapter triggers, sacrifice SBA
 
 **Test Coverage**
-- 554 tests covering all implemented features
+- 611 tests covering all implemented features
 - Game-level integration tests for ward payment, hexproof blocking, protection targeting, saga lifecycle
 
 ---
@@ -163,11 +163,11 @@ All evergreen keywords are implemented.
 
 | Keyword | Type | Engine Requirement |
 |---------|------|-------------------|
-| **Cycling {cost}** | Activated | Discard this, pay cost, draw a card |
+| **Cycling {cost}** | Activated | ✅ Discard this, pay cost, draw a card |
 | **Kicker {cost}** | Static/Trigger | ✅ Optional additional cost when casting for enhanced effect |
 | **Flashback {cost}** | Static | ✅ Can be cast from graveyard for flashback cost, then exiled |
 | **Equip {cost}** | Activated | Attach equipment to target creature you control |
-| **Prowess** | Triggered | Whenever you cast a noncreature spell, +1/+1 until end of turn |
+| **Prowess** | Triggered | ✅ Whenever you cast a noncreature spell, +1/+1 until end of turn |
 | **Surveil N** | Keyword action | Look at top N cards, put any in graveyard, rest back on top |
 | **Landfall** | Ability word | Trigger: whenever a land enters under your control |
 | **Scry N** | Keyword action | Look at top N, put any on bottom in any order, rest on top |
@@ -279,7 +279,7 @@ All evergreen keywords are implemented.
 - Split second (nothing else can go on stack while this resolves)
 - Copy spells on the stack (Fork, Twincast effects)
 - ~~Alternative costs / additional costs~~ ✅ (kicker, flashback)
-- X spells (X = 0 everywhere except stack)
+- ~~X spells (X = 0 everywhere except stack)~~ ✅ (x_value on CardInstance, cast_spell x_value param)
 
 ### 3d. State-Based Actions — ✅ COMPLETE
 
@@ -345,11 +345,11 @@ Full combat system implemented:
 - ✅ Color identity for Commander format
 
 **Remaining**:
-- **Hybrid mana** (e.g., {R/G} — pay with either red or green)
-- **Phyrexian mana** (e.g., {R/P} — pay R or 2 life)
+- ~~**Hybrid mana** (e.g., {R/G} — pay with either red or green)~~ ✅ Parsed, payable, integrated
+- ~~**Phyrexian mana** (e.g., {R/P} — pay R or 2 life)~~ ✅ Life payment via cast_spell phyrexian_life_pay
 - **Snow mana** ({S} — paid with mana from a snow source)
 - **Generic vs Colorless distinction**: {1} is generic (any color), {C} specifically needs colorless
-- **X costs**: variable mana costs
+- ~~**X costs**: variable mana costs~~ ✅
 - **Alternative costs**: Force of Will (exile blue card + 1 life), overload, etc.
 - **Additional costs**: kicker, buyback, sacrificing creatures, etc.
 - **Cost reduction**: affinity, convoke, delve
@@ -473,8 +473,8 @@ Full `ReplacementEffectManager` with layering per CR 614:
 ### Phase 3: Advanced Mechanics — ✅ MOSTLY COMPLETE
 14. ✅ Full layer system (7 layers with sublayers, timestamp ordering)
 15. ✅ Replacement effects (DAMAGE, DRAW, ETB, DIE, DISCARD, COUNTER_PLACED, LIFE_GAIN, ZONE_CHANGE)
-16. Hybrid/Phyrexian/Snow mana — not yet
-17. X spells — not yet
+16. ~~Hybrid/Phyrexian/Snow mana~~ ✅ (hybrid and Phyrexian implemented; snow mana parsed but not enforced)
+17. ~~X spells~~ ✅
 18. Copy effects — not yet
 19. ✅ Face-down cards (morph, disguise, cloak)
 20. ✅ DFCs and transform (day/night, disturb, meld)
@@ -500,11 +500,11 @@ These are the highest-impact items remaining, in recommended priority order:
 6. ~~**Sagas**~~ ✅ — lore counters, chapter abilities, sacrifice SBA, game engine integration
 7. ~~**Kicker / additional costs**~~ ✅ — optional extra costs when casting, kicker_effects appended
 8. ~~**Flashback**~~ ✅ — cast from graveyard for flashback cost, exiled on resolution
-9. **X spells** — variable mana costs
-10. **Hybrid / Phyrexian mana** — {R/G} and {R/P} cost types
+9. ~~**X spells** — variable mana costs~~ ✅
+10. ~~**Hybrid / Phyrexian mana** — {R/G} and {R/P} cost types~~ ✅
 11. **Copy effects** — Fork, Twincast, Clone
-12. **Cycling** — discard to draw
-13. **Prowess** — noncreature spell trigger for +1/+1
+12. ~~**Cycling** — discard to draw~~ ✅
+13. ~~**Prowess** — noncreature spell trigger for +1/+1~~ ✅
 
 ---
 

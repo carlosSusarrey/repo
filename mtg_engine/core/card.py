@@ -35,6 +35,7 @@ class Card:
     kicker_cost: str | None = None  # e.g. "{2}{R}" — optional additional cost
     flashback_cost: str | None = None  # e.g. "{3}{B}" — cast from graveyard for this cost
     kicker_effects: list[dict[str, Any]] = field(default_factory=list)  # extra effects when kicked
+    cycling_cost: str | None = None  # e.g. "{2}" — discard this, pay cost, draw a card
 
     def __post_init__(self) -> None:
         """Ensure card_types list is synced with card_type."""
@@ -120,6 +121,7 @@ class CardInstance:
     # Casting mode tracking
     was_kicked: bool = False
     cast_with_flashback: bool = False
+    x_value: int = 0  # Value of X chosen when casting X spells
     # Stack state — populated when casting, cleared on resolution
     _stack_effects: list[dict[str, Any]] = field(default_factory=list)
     _stack_targets: list[str] = field(default_factory=list)
@@ -227,6 +229,7 @@ class CardInstance:
         self._stack_targets = []
         self.was_kicked = False
         self.cast_with_flashback = False
+        self.x_value = 0
 
     def clear_end_of_turn(self) -> None:
         """Clear temporary effects at end of turn."""

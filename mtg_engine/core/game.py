@@ -143,7 +143,9 @@ class Game:
     def cast_spell(self, player_index: int, instance_id: str,
                    targets: list[str] | None = None,
                    kicked: bool = False,
-                   flashback: bool = False) -> bool:
+                   flashback: bool = False,
+                   x_value: int = 0,
+                   phyrexian_life_pay: list[int] | None = None) -> bool:
         """Cast a spell - put it on the stack.
 
         Args:
@@ -151,6 +153,11 @@ class Game:
             flashback: If True, cast from the graveyard for the flashback
                 cost.  The spell is exiled instead of going to the graveyard
                 on resolution.
+            x_value: The chosen value for X in X spells. Added as generic
+                mana to the cost (multiplied by x_count in the cost).
+            phyrexian_life_pay: Indices (0-based) into the card's cost
+                phyrexian tuple indicating which Phyrexian mana symbols
+                to pay with 2 life instead of mana.
         """
         player = self.state.players[player_index]
         card = self.state.find_card(instance_id)
@@ -213,6 +220,51 @@ class Game:
         else:
             base_cost = card.card.cost
 
+        # X spells: add X * x_count as generic mana to the cost
+        if base_cost.has_x and x_value > 0:
+            x_generic = base_cost.x_count * x_value
+            base_cost = ManaCost(
+                generic=base_cost.generic + x_generic,
+                white=base_cost.white, blue=base_cost.blue,
+                black=base_cost.black, red=base_cost.red,
+                green=base_cost.green, colorless=base_cost.colorless,
+                snow=base_cost.snow, x_count=0,
+                hybrid=base_cost.hybrid, phyrexian=base_cost.phyrexian,
+            )
+        elif base_cost.has_x:
+            # X=0 is valid, just strip the X symbols
+            base_cost = ManaCost(
+                generic=base_cost.generic,
+                white=base_cost.white, blue=base_cost.blue,
+                black=base_cost.black, red=base_cost.red,
+                green=base_cost.green, colorless=base_cost.colorless,
+                snow=base_cost.snow, x_count=0,
+                hybrid=base_cost.hybrid, phyrexian=base_cost.phyrexian,
+            )
+
+        # Phyrexian mana: remove symbols being paid with life from mana cost
+        phyrexian_life_cost = 0
+        if phyrexian_life_pay and base_cost.phyrexian:
+            remaining_phyrexian = list(base_cost.phyrexian)
+            # Remove paid-with-life symbols (iterate in reverse to preserve indices)
+            for idx in sorted(phyrexian_life_pay, reverse=True):
+                if 0 <= idx < len(remaining_phyrexian):
+                    remaining_phyrexian.pop(idx)
+                    phyrexian_life_cost += 2
+            base_cost = ManaCost(
+                generic=base_cost.generic,
+                white=base_cost.white, blue=base_cost.blue,
+                black=base_cost.black, red=base_cost.red,
+                green=base_cost.green, colorless=base_cost.colorless,
+                snow=base_cost.snow, x_count=base_cost.x_count,
+                hybrid=base_cost.hybrid,
+                phyrexian=tuple(remaining_phyrexian),
+            )
+
+        # Check life threshold for Phyrexian payment
+        if phyrexian_life_cost > 0 and player.life <= phyrexian_life_cost:
+            return False  # Would die from Phyrexian mana payment
+
         # Add kicker cost if kicked
         kicker_extra = ManaCost()
         if kicked:
@@ -226,6 +278,8 @@ class Game:
             if ward_costs and player.mana_pool.can_pay(spell_cost):
                 # Can pay spell cost but not ward — spell is countered
                 player.mana_pool.pay(spell_cost)
+                if phyrexian_life_cost > 0:
+                    player.lose_life(phyrexian_life_cost)
                 card.zone = Zone.GRAVEYARD
                 for tc, wc in ward_costs:
                     self._log(f"Ward: {tc.name}'s ward cost {wc} not paid — spell countered")
@@ -234,6 +288,9 @@ class Game:
 
         # Pay the cost (spell + ward)
         player.mana_pool.pay(combined_cost)
+        if phyrexian_life_cost > 0:
+            player.lose_life(phyrexian_life_cost)
+            self._log(f"Paid {phyrexian_life_cost} life for Phyrexian mana")
         for tc, wc in ward_costs:
             self._log(f"Ward: {wc} paid for targeting {tc.name}")
 
@@ -250,6 +307,7 @@ class Game:
         # Track casting mode
         card.was_kicked = kicked
         card.cast_with_flashback = flashback
+        card.x_value = x_value
 
         # Put the actual card on the stack
         card.zone = Zone.STACK
@@ -262,6 +320,8 @@ class Game:
             cast_desc += " (kicked)"
         if flashback:
             cast_desc += " (flashback)"
+        if x_value > 0:
+            cast_desc += f" (X={x_value})"
         self._log(f"{player.name} casts {cast_desc}")
 
         # Fire on-cast triggers (cascade, storm, etc.) via EventBus
@@ -271,6 +331,12 @@ class Game:
              "player_index": player_index},
             self.state.get_battlefield(),
         )
+
+        # Prowess: noncreature spell triggers +1/+1 until EOT on each
+        # creature with prowess controlled by the caster
+        if not card.card.is_creature:
+            self._check_prowess(player_index)
+
         # Put any pending triggered abilities on the stack
         self.put_triggers_on_stack()
 
@@ -391,6 +457,28 @@ class Game:
             self.state.stack.push(item)
             count += 1
         return count
+
+    def _check_prowess(self, player_index: int) -> None:
+        """Check for prowess triggers on the casting player's creatures.
+
+        Called when a noncreature spell is cast. Each creature with prowess
+        controlled by the caster gets a triggered ability that gives +1/+1 EOT.
+        """
+        for card in self.state.get_battlefield(player_index):
+            if card.card.is_creature and card.has_keyword(Keyword.PROWESS):
+                prowess_ability = AbilityOnStack(
+                    source_id=card.instance_id,
+                    controller_index=player_index,
+                    card_name=f"{card.name} prowess",
+                    effects=[{
+                        "type": "pump",
+                        "target": {"kind": "self"},
+                        "power": 1,
+                        "toughness": 1,
+                    }],
+                )
+                self.state.stack.push(prowess_ability)
+                self._log(f"Prowess triggers on {card.name}")
 
     def _resolve_effect(self, effect: dict[str, Any], item: Stackable) -> dict[str, Any]:
         """Resolve a single effect from a spell or ability."""
@@ -780,6 +868,48 @@ class Game:
             self.state.get_battlefield(),
         )
         return token_instance
+
+    # ---- Cycling ----
+
+    def activate_cycling(self, player_index: int, instance_id: str) -> bool:
+        """Activate cycling — discard a card from hand, pay its cycling cost, draw a card.
+
+        Cycling is an activated ability (CR 702.28). It can be activated
+        any time the player has priority, from hand only.
+        """
+        player = self.state.players[player_index]
+        card = self.state.find_card(instance_id)
+
+        if card is None or card.zone != Zone.HAND:
+            return False
+        if card.card.cycling_cost is None:
+            return False
+
+        from mtg_engine.core.mana import ManaCost
+        cost = ManaCost.parse(card.card.cycling_cost)
+        if not player.mana_pool.can_pay(cost):
+            return False
+
+        # Pay cost and discard
+        player.mana_pool.pay(cost)
+        card.zone = Zone.GRAVEYARD
+        self._log(f"{player.name} cycles {card.name}")
+
+        # Emit discard trigger
+        self.state.event_bus.emit_triggers_only(
+            GameEvent.DISCARD,
+            {"card_id": card.instance_id, "card": card,
+             "player_index": player_index},
+            self.state.get_battlefield(),
+        )
+
+        # Draw a card
+        self.draw_card(player_index)
+
+        # Cycling triggers (e.g., "when you cycle this card")
+        self.put_triggers_on_stack()
+        self.state.reset_priority()
+        return True
 
     # ---- Combat ----
 

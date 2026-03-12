@@ -6,7 +6,7 @@
   - `docs/GAP_ANALYSIS.md` — strike through completed items, update phase status
   - `README.md` — update "Implemented Mechanics" if the change adds a user-visible mechanic or major feature
 - **Track small tasks and future improvements**: Add discovered issues, tech debt, or small follow-ups to the "Future Improvements / Small Tasks" section below so they aren't lost between sessions.
-- **Tests**: Always run `python -m pytest` after changes. Current count: 580 tests.
+- **Tests**: Always run `python -m pytest` after changes. Current count: 611 tests.
 - **Commit style**: Imperative mood, explain "why" not "what". Include session link.
 
 ## Architecture
@@ -29,6 +29,11 @@
 - **Adventure**: Cast as adventure, exile, cast from exile
 - **Kicker**: Optional additional cost (`kicker_cost` on Card), `kicker_effects` appended when kicked, `was_kicked` tracked on CardInstance
 - **Flashback**: Cast from graveyard for `flashback_cost`, exiled on resolution, `cast_with_flashback` tracked on CardInstance
+- **X spells**: Variable mana costs (`x_count` on ManaCost, `x_value` on CardInstance). `cast_spell(x_value=N)` adds N×x_count as generic mana. X=0 everywhere except the stack (CR 107.3b). `x_damage` effect uses stored `x_value`.
+- **Hybrid mana**: `{W/U}` style costs parsed by ManaCost, payable with either color. Contributes both colors to color identity.
+- **Phyrexian mana**: `{R/P}` style costs payable with mana or 2 life. `cast_spell(phyrexian_life_pay=[indices])` for life payment.
+- **Cycling**: Activated ability — discard from hand, pay `cycling_cost`, draw a card. `activate_cycling()` in Game.
+- **Prowess**: Triggered ability — whenever a noncreature spell is cast, each creature with prowess you control gets +1/+1 until EOT. Checked in `cast_spell`, creates `AbilityOnStack` entries.
 
 ## Key Patterns
 - **EventBus**: `state.event_bus.emit()` / `emit_triggers_only()` / `emit_replacement_only()` is the canonical way to fire game events. All emit sites in `game.py` and `game_state.py` go through EventBus — never call `triggers.check_triggers()` or `replacement_effects.check_replacement()` directly from game code.
@@ -41,10 +46,7 @@
 
 ## Remaining Gaps (Phase 5+)
 See `docs/GAP_ANALYSIS.md` for full details. Key remaining items:
-- X spells
-- Hybrid/Phyrexian mana
 - Copy effects (Fork, Clone)
-- Cycling, Prowess
 
 ## Future Improvements / Small Tasks
 <!-- Add discovered issues, tech debt, and follow-ups here so they survive between sessions -->
