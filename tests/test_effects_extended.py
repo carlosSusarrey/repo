@@ -1093,3 +1093,60 @@ class TestActivateAbilityWithSacrifice:
         assert result is True
         assert altar_inst.tapped is True
         assert creature.zone == Zone.GRAVEYARD
+
+
+class TestIfDidEffect:
+    def test_if_did_condition_accepted(self):
+        """When may is accepted, the then-effect fires."""
+        game = _setup_game()
+        hand_before = len(game.state.get_zone(0, Zone.HAND))
+
+        if_did = {
+            "type": "if_did",
+            "condition_effect": {"type": "may", "inner_effect": {"type": "gain_life", "amount": 1}},
+            "then_effect": {"type": "draw", "amount": 1},
+        }
+        spell = Card(name="Test", card_type=CardType.INSTANT, cost=ManaCost.parse("{U}"))
+        _cast_and_resolve(game, spell, effects=[if_did])
+
+        assert game.state.players[0].life == 21  # gained 1 life
+        assert len(game.state.get_zone(0, Zone.HAND)) == hand_before + 1  # drew
+
+    def test_if_did_condition_declined(self):
+        """When may is declined, the then-effect does NOT fire."""
+        game = Game(
+            ["Alice", "Bob"],
+            [_simple_deck(), _simple_deck()],
+            decision_callback=lambda pi, desc, ctx: False,
+        )
+        game.draw_opening_hands()
+        hand_before = len(game.state.get_zone(0, Zone.HAND))
+
+        if_did = {
+            "type": "if_did",
+            "condition_effect": {"type": "may", "inner_effect": {"type": "gain_life", "amount": 1}},
+            "then_effect": {"type": "draw", "amount": 1},
+        }
+        spell = Card(name="Test", card_type=CardType.INSTANT, cost=ManaCost.parse("{U}"))
+        _cast_and_resolve(game, spell, effects=[if_did])
+
+        assert game.state.players[0].life == 20  # no life gain
+        assert len(game.state.get_zone(0, Zone.HAND)) == hand_before  # no draw
+
+    def test_if_did_non_may_condition(self):
+        """if_did with a non-may condition that succeeds fires the then."""
+        game = _setup_game()
+        hand_before = len(game.state.get_zone(0, Zone.HAND))
+
+        if_did = {
+            "type": "if_did",
+            "condition_effect": {"type": "gain_life", "amount": 2},
+            "then_effect": {"type": "draw", "amount": 1},
+        }
+        item = AbilityOnStack(
+            source_id="test", controller_index=0,
+            card_name="Test", effects=[if_did],
+        )
+        result = game._resolve_effect(if_did, item)
+        assert result["success"] is True
+        assert "skipped_then" not in result

@@ -705,7 +705,25 @@ def translate_rules_text(rules_text: str) -> dict:
             result["activated_abilities"].append(activated)
             continue
 
-        # 5. Standalone effect (for instants/sorceries)
+        # 5. "If you do" / "If the player does" — link to previous effect
+        if_did_match = re.match(
+            r"[Ii]f\s+(?:you|the\s+player)\s+(?:do|does|did)\s*,?\s*(.*)",
+            sentence,
+        )
+        if if_did_match:
+            then_effects = _parse_effect_text(if_did_match.group(1))
+            if then_effects and result["effects"]:
+                # Wrap the last effect with if_did
+                prev = result["effects"].pop()
+                for then_e in then_effects:
+                    result["effects"].append({
+                        "type": "if_did",
+                        "condition_effect": prev,
+                        "then_effect": then_e,
+                    })
+                continue
+
+        # 6. Standalone effect (for instants/sorceries)
         effects = _parse_effect_text(sentence)
         if effects:
             result["effects"].extend(effects)

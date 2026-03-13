@@ -107,6 +107,7 @@ effect_single: damage_effect
       | sacrifice_effect
       | x_damage_effect
       | may_effect
+      | if_did_effect
 
 damage_effect: "damage(" target "," NUMBER ")"
 destroy_effect: "destroy(" target ")"
@@ -127,6 +128,7 @@ bounce_effect: "bounce(" target ")"
 sacrifice_effect: "sacrifice(" target ")"
 x_damage_effect: "x_damage(" target ")"
 may_effect: "may(" effect_single ")"
+if_did_effect: "if_did(" effect_single "," effect_single ")"
 
 target: "target(" TARGET_TYPE "," CONTROLLER_QUALIFIER "," STATE_QUALIFIER ")"  -> target_type_ctrl_state
       | "target(" TARGET_TYPE "," CONTROLLER_QUALIFIER ")"                     -> target_type_ctrl

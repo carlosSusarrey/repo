@@ -463,6 +463,9 @@ class CardTransformer(Transformer):
     def may_effect(self, items):
         return {"type": "may", "inner_effect": items[0]}
 
+    def if_did_effect(self, items):
+        return {"type": "if_did", "condition_effect": items[0], "then_effect": items[1]}
+
     def target_self(self, items):
         return {"kind": "self"}
 

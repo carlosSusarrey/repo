@@ -855,6 +855,21 @@ class Game:
                     result["success"] = True
                     result["declined"] = True
 
+        elif effect_type == "if_did":
+            condition = effect.get("condition_effect")
+            then = effect.get("then_effect")
+            if condition and then:
+                cond_result = self._resolve_effect(condition, item)
+                result["condition_result"] = cond_result
+                if cond_result.get("success") and not cond_result.get("declined"):
+                    then_result = self._resolve_effect(then, item)
+                    result["then_result"] = then_result
+                    result["success"] = then_result.get("success", False)
+                else:
+                    # Condition failed or was declined — skip then, still valid
+                    result["success"] = True
+                    result["skipped_then"] = True
+
         return result
 
     # ---- Token Creation ----

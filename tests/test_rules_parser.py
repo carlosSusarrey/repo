@@ -856,3 +856,54 @@ class TestSacrificeAsCost:
         ab = card.activated_abilities[0]
         assert ab["cost"]["sacrifice"] == "creature"
         assert "mana" in ab["cost"]
+
+
+# ---- Conditional effects ("if you do") ----
+
+class TestIfDidEffects:
+    def test_if_you_do_links_effects(self):
+        text = "You may sacrifice a creature. If you do, draw two cards"
+        result = translate_rules_text(text)
+        assert len(result["effects"]) == 1
+        e = result["effects"][0]
+        assert e["type"] == "if_did"
+        assert e["condition_effect"]["type"] == "may"
+        assert e["then_effect"]["type"] == "draw"
+
+    def test_if_the_player_does(self):
+        text = "You may sacrifice a creature. If the player does, draw a card"
+        result = translate_rules_text(text)
+        assert len(result["effects"]) == 1
+        e = result["effects"][0]
+        assert e["type"] == "if_did"
+
+    def test_if_you_did(self):
+        text = "You may destroy target creature. If you did, gain 3 life"
+        result = translate_rules_text(text)
+        assert len(result["effects"]) == 1
+        e = result["effects"][0]
+        assert e["type"] == "if_did"
+        assert e["condition_effect"]["type"] == "may"
+        assert e["then_effect"]["type"] == "gain_life"
+
+    def test_no_previous_effect_falls_through(self):
+        """If you do without a preceding effect falls through to standalone."""
+        text = "If you do, draw a card"
+        result = translate_rules_text(text)
+        # No preceding effect to link to — falls through to standalone parsing
+        assert len(result["effects"]) == 1
+        assert result["effects"][0]["type"] == "draw"
+
+    def test_dsl_if_did(self):
+        dsl = '''
+        card "Conditional Spell" {
+            type: Instant
+            cost: {1}{B}
+            effect: if_did(may(sacrifice(self)), draw(2))
+        }
+        '''
+        cards = parse_card(dsl)
+        card = cards[0]
+        assert card.effects[0]["type"] == "if_did"
+        assert card.effects[0]["condition_effect"]["type"] == "may"
+        assert card.effects[0]["then_effect"]["type"] == "draw"
