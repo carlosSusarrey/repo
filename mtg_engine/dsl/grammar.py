@@ -122,15 +122,23 @@ bounce_effect: "bounce(" target ")"
 sacrifice_effect: "sacrifice(" target ")"
 x_damage_effect: "x_damage(" target ")"
 
-target: "target(" TARGET_TYPE ")"
-      | SELF_TARGET
-      | EACH_OPPONENT_TARGET
-      | "all(" TARGET_TYPE ")"
+target: "target(" TARGET_TYPE "," CONTROLLER_QUALIFIER "," STATE_QUALIFIER ")"  -> target_type_ctrl_state
+      | "target(" TARGET_TYPE "," CONTROLLER_QUALIFIER ")"                     -> target_type_ctrl
+      | "target(" TARGET_TYPE "," STATE_QUALIFIER ")"                          -> target_type_state
+      | "target(" TARGET_TYPE ")"                                              -> target_type_only
+      | SELF_TARGET                                                            -> target_self
+      | EACH_OPPONENT_TARGET                                                   -> target_each_opp
+      | "all(" TARGET_TYPE "," CONTROLLER_QUALIFIER "," STATE_QUALIFIER ")"    -> all_type_ctrl_state
+      | "all(" TARGET_TYPE "," CONTROLLER_QUALIFIER ")"                        -> all_type_ctrl
+      | "all(" TARGET_TYPE "," STATE_QUALIFIER ")"                             -> all_type_state
+      | "all(" TARGET_TYPE ")"                                                 -> all_type_only
 
 SELF_TARGET: "self"
 EACH_OPPONENT_TARGET: "each_opponent"
 
 TARGET_TYPE: "creature" | "player" | "any_target" | "artifact" | "enchantment" | "permanent" | "spell"
+CONTROLLER_QUALIFIER: "you" | "opponent"
+STATE_QUALIFIER: "attacking" | "blocking" | "blocked" | "unblocked" | "tapped" | "untapped"
 ENCHANT_TYPE: "creature" | "artifact" | "land" | "enchantment" | "permanent" | "player"
 MANA_COLOR: "W" | "U" | "B" | "R" | "G" | "C"
 

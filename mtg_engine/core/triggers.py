@@ -9,6 +9,14 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 
+from mtg_engine.core.filters import (
+    RELATION_KEYWORDS as _RELATION_KEYWORDS,
+    CARD_TYPE_KEYWORDS as _CARD_TYPE_KEYWORDS,
+    ALL_FILTER_KEYWORDS as FILTER_KEYWORDS,
+    parse_source_filter,
+    matches_filter as _matches_filter,
+)
+
 
 class TriggerEvent(Enum):
     """Events that can trigger abilities."""
@@ -41,55 +49,6 @@ class TriggerEvent(Enum):
     LOSE_LIFE = auto()
     DRAW_CARD = auto()
     LAND_ENTERS = auto()  # landfall
-
-
-# Relation keywords determine the relationship between the trigger source
-# and the event source (self, another, any, you).
-_RELATION_KEYWORDS = {"self", "another", "any", "you"}
-
-# Card type keywords filter by the event source's card type.
-# These correspond to permanent types in Magic.
-_CARD_TYPE_KEYWORDS = {
-    "creature", "artifact", "enchantment", "planeswalker",
-    "land", "battle", "kindred",
-}
-
-# Token status keywords filter by whether the event source is a token.
-_TOKEN_KEYWORDS = {"token", "nontoken"}
-
-# All recognized filter keywords.
-FILTER_KEYWORDS = _RELATION_KEYWORDS | _CARD_TYPE_KEYWORDS | _TOKEN_KEYWORDS
-
-
-def parse_source_filter(source: str | dict[str, Any]) -> dict[str, Any]:
-    """Normalize a source filter to a structured dict.
-
-    Accepts either:
-      - A legacy string like "self", "creature", "another"
-      - A structured dict with optional keys: relation, card_type, token
-
-    Returns a dict with optional keys:
-      - "relation": "self" | "another" | "any" | "you"
-      - "card_type": "creature" | "artifact" | "enchantment" | etc.
-      - "token": True (only tokens) | False (only non-tokens)
-    """
-    if isinstance(source, dict):
-        return source
-
-    # Legacy string — could be a single keyword
-    source = source.strip()
-    if source in _RELATION_KEYWORDS:
-        return {"relation": source}
-    if source in _CARD_TYPE_KEYWORDS:
-        return {"card_type": source}
-    if source == "token":
-        return {"token": True}
-    if source == "nontoken":
-        return {"token": False}
-    if source == "permanent":
-        return {"card_type": "permanent"}
-    # Unknown filter — treat as "any"
-    return {}
 
 
 @dataclass
@@ -244,76 +203,4 @@ def _parse_trigger_event(name: str) -> TriggerEvent | None:
     return mapping.get(name)
 
 
-def _matches_filter(
-    source_filter: dict[str, Any],
-    card,
-    event_data: dict[str, Any],
-) -> bool:
-    """Check if an event matches a structured source filter.
-
-    Each key in the filter dict is checked independently; all must pass.
-
-    Keys:
-      - "relation": relationship between trigger owner and event source
-          "self"    — event source is this card
-          "another" — event source is NOT this card
-          "any"     — always matches
-          "you"     — event was caused by this card's controller
-      - "card_type": event source must be this card type
-          "creature", "artifact", "enchantment", "planeswalker",
-          "land", "battle", "kindred"
-          "permanent" — any permanent type (not instant/sorcery)
-      - "token": True means only tokens, False means only non-tokens
-    """
-    from mtg_engine.core.enums import CardType
-
-    _CARD_TYPE_MAP = {
-        "creature": CardType.CREATURE,
-        "artifact": CardType.ARTIFACT,
-        "enchantment": CardType.ENCHANTMENT,
-        "planeswalker": CardType.PLANESWALKER,
-        "land": CardType.LAND,
-        "battle": CardType.BATTLE,
-        "kindred": CardType.KINDRED,
-    }
-
-    # Check relation
-    relation = source_filter.get("relation")
-    if relation == "self":
-        if event_data.get("card_id") != card.instance_id:
-            return False
-    elif relation == "another":
-        if event_data.get("card_id") == card.instance_id:
-            return False
-    elif relation == "you":
-        if event_data.get("player_index") != card.controller_index:
-            return False
-    # "any" or no relation — always passes
-
-    # Check card type
-    card_type_filter = source_filter.get("card_type")
-    if card_type_filter is not None:
-        event_card = event_data.get("card")
-        if event_card is None:
-            return False
-        if card_type_filter == "permanent":
-            if event_card.card.card_type in (CardType.INSTANT, CardType.SORCERY):
-                return False
-        else:
-            expected = _CARD_TYPE_MAP.get(card_type_filter)
-            if expected is not None and event_card.card.card_type != expected:
-                return False
-
-    # Check token status
-    token_filter = source_filter.get("token")
-    if token_filter is not None:
-        event_card = event_data.get("card")
-        if event_card is None:
-            return False
-        is_token = getattr(event_card, "is_token", False)
-        if token_filter and not is_token:
-            return False
-        if not token_filter and is_token:
-            return False
-
-    return True
+    # _matches_filter is imported from mtg_engine.core.filters

@@ -19,7 +19,6 @@
     type: Instant
     cost: {R}
     rules: "Deal 3 damage to any target."
-    effect: damage(target(any_target), 3)
 }'></textarea>
             <div class="button-row">
                 <button id="btn-parse" onclick="parseCards()">Parse Cards</button>
@@ -36,7 +35,242 @@
         </section>
     </main>
 
+    <!-- Example Library -->
+    <section class="library-section">
+        <h2>Example Library</h2>
+        <div class="library-nav">
+            <button class="lib-tab active" onclick="showCategory('damage')">Damage</button>
+            <button class="lib-tab" onclick="showCategory('draw')">Draw</button>
+            <button class="lib-tab" onclick="showCategory('removal')">Removal</button>
+            <button class="lib-tab" onclick="showCategory('combat')">Combat</button>
+            <button class="lib-tab" onclick="showCategory('lifegain')">Life</button>
+            <button class="lib-tab" onclick="showCategory('tokens')">Tokens</button>
+            <button class="lib-tab" onclick="showCategory('triggers')">Triggers</button>
+            <button class="lib-tab" onclick="showCategory('activated')">Activated</button>
+            <button class="lib-tab" onclick="showCategory('utility')">Utility</button>
+            <button class="lib-tab" onclick="showCategory('qualifiers')">Qualifiers</button>
+            <button class="lib-tab" onclick="showCategory('planeswalker')">Planeswalkers</button>
+            <button class="lib-tab" onclick="showCategory('lands')">Lands</button>
+        </div>
+        <div class="library-grid" id="library-grid"></div>
+    </section>
+
+    <!-- Card Schema Reference -->
+    <section class="reference-section">
+        <h2>Card Schema Reference</h2>
+        <div class="reference-grid">
+            <div class="ref-group">
+                <h3>Required</h3>
+                <div class="ref-row">
+                    <code class="ref-slot">type:</code>
+                    <span class="ref-desc">Creature, Instant, Sorcery, Enchantment, Artifact, Planeswalker, Land, Battle, Kindred</span>
+                </div>
+            </div>
+            <div class="ref-group">
+                <h3>Identity</h3>
+                <div class="ref-row">
+                    <code class="ref-slot">cost:</code>
+                    <span class="ref-desc">Mana cost &mdash; <code>{1}{W}</code>, <code>{X}{R}{R}</code>, <code>{W/U}</code> (hybrid), <code>{R/P}</code> (Phyrexian)</span>
+                </div>
+                <div class="ref-row">
+                    <code class="ref-slot">supertype:</code>
+                    <span class="ref-desc">Legendary, Basic, Snow</span>
+                </div>
+                <div class="ref-row">
+                    <code class="ref-slot">subtype:</code>
+                    <span class="ref-desc">Creature type, land type, etc. &mdash; Human, Angel, Equipment, Aura, Plains</span>
+                </div>
+            </div>
+            <div class="ref-group">
+                <h3>Stats</h3>
+                <div class="ref-row">
+                    <code class="ref-slot">p/t:</code>
+                    <span class="ref-desc">Power / toughness &mdash; <code>2 / 3</code></span>
+                </div>
+                <div class="ref-row">
+                    <code class="ref-slot">loyalty:</code>
+                    <span class="ref-desc">Starting loyalty for planeswalkers &mdash; <code>4</code></span>
+                </div>
+            </div>
+            <div class="ref-group">
+                <h3>Rules Text (auto-translated)</h3>
+                <div class="ref-row">
+                    <code class="ref-slot">rules:</code>
+                    <span class="ref-desc">Natural language &mdash; auto-generates effects, keywords, triggers, and activated abilities</span>
+                </div>
+            </div>
+            <div class="ref-group">
+                <h3>Explicit DSL (optional overrides)</h3>
+                <div class="ref-row">
+                    <code class="ref-slot">keywords:</code>
+                    <span class="ref-desc">flying, trample, first_strike, deathtouch, lifelink, vigilance, haste, hexproof, menace, defender, flash, reach, indestructible, prowess, ...</span>
+                </div>
+                <div class="ref-row">
+                    <code class="ref-slot">effect:</code>
+                    <span class="ref-desc">damage(), draw(), gain_life(), destroy(), exile(), bounce(), pump(), counter(), mill(), scry(), create_token(), add_mana(), add_counter(), tap(), sacrifice(), add_keyword(), x_damage() &mdash; Targets: <code>target(creature)</code>, <code>target(creature, opponent)</code>, <code>target(creature, attacking)</code>, <code>all(creature)</code>, <code>all(creature, attacking)</code></span>
+                </div>
+                <div class="ref-row">
+                    <code class="ref-slot">when(event):</code>
+                    <span class="ref-desc">Triggered ability &mdash; enters_battlefield, dies, attacks, blocks, cast, gain_life, begin_upkeep, end_step, ...</span>
+                </div>
+                <div class="ref-row">
+                    <code class="ref-slot">activate(cost):</code>
+                    <span class="ref-desc">Activated ability &mdash; <code>activate({0}): add_mana(G)</code></span>
+                </div>
+                <div class="ref-row">
+                    <code class="ref-slot">loyalty(+/-N):</code>
+                    <span class="ref-desc">Planeswalker ability &mdash; <code>loyalty(+1): draw(1)</code></span>
+                </div>
+                <div class="ref-row">
+                    <code class="ref-slot">enchant:</code>
+                    <span class="ref-desc">Aura target type &mdash; creature, artifact, permanent</span>
+                </div>
+                <div class="ref-row">
+                    <code class="ref-slot">equip:</code>
+                    <span class="ref-desc">Equipment equip cost &mdash; <code>{2}</code></span>
+                </div>
+                <div class="ref-row">
+                    <code class="ref-slot">replace(event):</code>
+                    <span class="ref-desc">Replacement effect &mdash; enter_tapped, add_counters(), prevent, prevent_damage()</span>
+                </div>
+            </div>
+            <div class="ref-group">
+                <h3>Supported Rules Text Patterns</h3>
+                <div class="ref-patterns">
+                    <code>Deal N damage to any target / target creature / each opponent</code>
+                    <code>Draw N card(s)</code>
+                    <code>Gain N life</code>
+                    <code>Each opponent loses N life</code>
+                    <code>Destroy / Exile target creature / artifact / permanent</code>
+                    <code>Return target creature to its owner's hand</code>
+                    <code>Counter target spell</code>
+                    <code>Target creature gets +N/+N until end of turn</code>
+                    <code>Scry N &middot; Mill N</code>
+                    <code>Tap target creature</code>
+                    <code>Destroy/Exile target attacking/blocking/tapped creature</code>
+                    <code>Destroy/Exile all [attacking/tapped] creatures</code>
+                    <code>All creatures get +N/+N until end of turn</code>
+                    <code>target creature you don't control / you control</code>
+                    <code>Create a N/N [type] creature token</code>
+                    <code>Put a +1/+1 counter on ~</code>
+                    <code>When ~ enters the battlefield, ... &middot; When ~ dies, ...</code>
+                    <code>Whenever ~ attacks, ... &middot; At the beginning of your upkeep, ...</code>
+                    <code>{T}: Add {G} &middot; {2}{R}: Deal 2 damage to any target</code>
+                    <code>Flying, first strike, lifelink (comma-separated keywords)</code>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <script>
+        // ---- Example library data ----
+        const EXAMPLES = {
+            damage: [
+                { name: 'Lightning Bolt', dsl: `card "Lightning Bolt" {\n    type: Instant\n    cost: {R}\n    rules: "Deal 3 damage to any target."\n}` },
+                { name: 'Shock', dsl: `card "Shock" {\n    type: Instant\n    cost: {R}\n    rules: "Deal 2 damage to any target."\n}` },
+                { name: 'Searing Spear', dsl: `card "Searing Spear" {\n    type: Instant\n    cost: {1}{R}\n    rules: "Deal 3 damage to target creature."\n}` },
+                { name: 'Blaze', dsl: `card "Blaze" {\n    type: Sorcery\n    cost: {X}{R}\n    rules: "Deal X damage to any target."\n}` },
+            ],
+            draw: [
+                { name: 'Ancestral Recall', dsl: `card "Ancestral Recall" {\n    type: Instant\n    cost: {U}\n    rules: "Draw 3 cards."\n}` },
+                { name: 'Divination', dsl: `card "Divination" {\n    type: Sorcery\n    cost: {2}{U}\n    rules: "Draw two cards."\n}` },
+                { name: 'Opt', dsl: `card "Opt" {\n    type: Instant\n    cost: {U}\n    rules: "Scry 1. Draw a card."\n}` },
+            ],
+            removal: [
+                { name: 'Murder', dsl: `card "Murder" {\n    type: Instant\n    cost: {1}{B}{B}\n    rules: "Destroy target creature."\n}` },
+                { name: 'Swords to Plowshares', dsl: `card "Swords to Plowshares" {\n    type: Instant\n    cost: {W}\n    rules: "Exile target creature."\n}` },
+                { name: 'Unsummon', dsl: `card "Unsummon" {\n    type: Instant\n    cost: {U}\n    rules: "Return target creature to its owner's hand."\n}` },
+                { name: 'Counterspell', dsl: `card "Counterspell" {\n    type: Instant\n    cost: {U}{U}\n    rules: "Counter target spell."\n}` },
+            ],
+            combat: [
+                { name: 'Serra Angel', dsl: `card "Serra Angel" {\n    type: Creature\n    cost: {3}{W}{W}\n    subtype: Angel\n    p/t: 4 / 4\n    rules: "Flying, vigilance"\n}` },
+                { name: 'Vampire Nighthawk', dsl: `card "Vampire Nighthawk" {\n    type: Creature\n    cost: {1}{B}{B}\n    subtype: Vampire\n    p/t: 2 / 3\n    rules: "Flying, deathtouch, lifelink"\n}` },
+                { name: 'Giant Growth', dsl: `card "Giant Growth" {\n    type: Instant\n    cost: {G}\n    rules: "Target creature gets +3/+3 until end of turn."\n}` },
+                { name: 'Smite (attacking)', dsl: `card "Smite" {\n    type: Instant\n    cost: {W}\n    rules: "Destroy target attacking creature."\n}` },
+                { name: 'Crippling Chill (tapped)', dsl: `card "Crippling Chill" {\n    type: Instant\n    cost: {2}{U}\n    rules: "Tap target untapped creature. Draw a card."\n}` },
+                { name: 'Ambush (blocking)', dsl: `card "Ambush" {\n    type: Instant\n    cost: {1}{R}\n    rules: "Destroy target blocking creature."\n}` },
+                { name: 'Rally (pump all)', dsl: `card "Rally the Forces" {\n    type: Instant\n    cost: {2}{W}\n    rules: "All creatures get +1/+1 until end of turn."\n}` },
+            ],
+            lifegain: [
+                { name: 'Healing Salve', dsl: `card "Healing Salve" {\n    type: Instant\n    cost: {W}\n    rules: "Gain 3 life."\n}` },
+                { name: 'Siege Rhino', dsl: `card "Siege Rhino" {\n    type: Creature\n    cost: {1}{W}{B}{G}\n    subtype: Rhino\n    p/t: 4 / 5\n    rules: "Trample. When ~ enters the battlefield, each opponent loses 3 life. Gain 3 life."\n}` },
+            ],
+            tokens: [
+                { name: 'Raise the Alarm', dsl: `card "Raise the Alarm" {\n    type: Instant\n    cost: {1}{W}\n    rules: "Create a 1/1 Soldier creature token."\n}` },
+                { name: 'Dragon Fodder', dsl: `card "Dragon Fodder" {\n    type: Sorcery\n    cost: {1}{R}\n    rules: "Create two 1/1 Goblin creature tokens."\n}` },
+            ],
+            triggers: [
+                { name: 'Elvish Visionary', dsl: `card "Elvish Visionary" {\n    type: Creature\n    cost: {1}{G}\n    subtype: Elf\n    p/t: 1 / 1\n    rules: "When ~ enters the battlefield, draw a card."\n}` },
+                { name: 'Wall of Omens', dsl: `card "Wall of Omens" {\n    type: Creature\n    cost: {1}{W}\n    subtype: Wall\n    p/t: 0 / 4\n    rules: "Defender. When ~ enters the battlefield, draw a card."\n}` },
+                { name: 'Blood Artist', dsl: `card "Blood Artist" {\n    type: Creature\n    cost: {1}{B}\n    subtype: Vampire\n    p/t: 0 / 1\n    rules: "When ~ dies, each opponent loses 1 life. Gain 1 life."\n}` },
+                { name: 'Phyrexian Arena', dsl: `card "Phyrexian Arena" {\n    type: Enchantment\n    cost: {1}{B}{B}\n    rules: "At the beginning of your upkeep, draw a card."\n}` },
+            ],
+            activated: [
+                { name: 'Llanowar Elves', dsl: `card "Llanowar Elves" {\n    type: Creature\n    cost: {G}\n    subtype: Elf\n    p/t: 1 / 1\n    rules: "{T}: Add {G}."\n}` },
+                { name: 'Prodigal Pyromancer', dsl: `card "Prodigal Pyromancer" {\n    type: Creature\n    cost: {2}{R}\n    subtype: Wizard\n    p/t: 1 / 1\n    rules: "{T}: Deal 1 damage to any target."\n}` },
+                { name: 'Bonesplitter', dsl: `card "Bonesplitter" {\n    type: Artifact\n    cost: {1}\n    subtype: Equipment\n    effect: pump(self, +2 / +0)\n    equip: {1}\n    rules: "Equipped creature gets +2/+0. Equip {1}"\n}` },
+            ],
+            utility: [
+                { name: 'Mind Sculpt', dsl: `card "Mind Sculpt" {\n    type: Sorcery\n    cost: {1}{U}\n    rules: "Mill 7."\n}` },
+                { name: 'Preordain', dsl: `card "Preordain" {\n    type: Sorcery\n    cost: {U}\n    rules: "Scry 2. Draw a card."\n}` },
+                { name: 'Icy Manipulator', dsl: `card "Icy Manipulator" {\n    type: Artifact\n    cost: {4}\n    rules: "{1}, {T}: Tap target creature."\n}` },
+            ],
+            qualifiers: [
+                { name: 'Dark Banishing (opponent)', dsl: `card "Dark Banishing" {\n    type: Instant\n    cost: {2}{B}\n    rules: "Destroy target creature you don't control."\n}` },
+                { name: 'Smite (attacking)', dsl: `card "Smite" {\n    type: Instant\n    cost: {W}\n    rules: "Destroy target attacking creature."\n}` },
+                { name: 'Exile Tapped', dsl: `card "Condemn" {\n    type: Instant\n    cost: {W}\n    rules: "Exile target tapped creature."\n}` },
+                { name: 'Wrath of God (all)', dsl: `card "Wrath of God" {\n    type: Sorcery\n    cost: {2}{W}{W}\n    rules: "Destroy all creatures."\n}` },
+                { name: 'Exile Attackers (all+state)', dsl: `card "Settle the Wreckage" {\n    type: Instant\n    cost: {2}{W}{W}\n    rules: "Exile all attacking creatures."\n}` },
+                { name: 'Bounce Own (you control)', dsl: `card "Rescue" {\n    type: Instant\n    cost: {U}\n    rules: "Return target creature you control to its owner's hand."\n}` },
+                { name: 'DSL: state qualifier', dsl: `card "Righteous Blow" {\n    type: Instant\n    cost: {W}\n    effect: destroy(target(creature, attacking))\n}` },
+                { name: 'DSL: all + state', dsl: `card "Rout" {\n    type: Sorcery\n    cost: {3}{W}{W}\n    effect: destroy(all(creature))\n}` },
+            ],
+            planeswalker: [
+                { name: 'Chandra, Torch of Defiance', dsl: `card "Chandra, Torch of Defiance" {\n    type: Planeswalker\n    cost: {2}{R}{R}\n    supertype: Legendary\n    subtype: Chandra\n    loyalty: 4\n    loyalty(+1): damage(each_opponent, 2)\n    loyalty(-3): damage(target(creature), 4)\n    loyalty(-7): draw(5)\n    rules: "+1: Deal 2 to each opponent. -3: Deal 4 to target creature. -7: Draw 5 cards."\n}` },
+            ],
+            lands: [
+                { name: 'Forest', dsl: `card "Forest" {\n    type: Land\n    supertype: Basic\n    subtype: Forest\n    rules: "{T}: Add {G}."\n}` },
+                { name: 'Mountain', dsl: `card "Mountain" {\n    type: Land\n    supertype: Basic\n    subtype: Mountain\n    rules: "{T}: Add {R}."\n}` },
+            ],
+        };
+
+        let activeCategory = 'damage';
+
+        function showCategory(cat) {
+            activeCategory = cat;
+            document.querySelectorAll('.lib-tab').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            renderLibrary();
+        }
+
+        function renderLibrary() {
+            const grid = document.getElementById('library-grid');
+            const items = EXAMPLES[activeCategory] || [];
+            grid.innerHTML = items.map(ex => `
+                <div class="lib-card" onclick="loadExample(this)" data-dsl="${escapeAttr(ex.dsl)}">
+                    <div class="lib-card-name">${ex.name}</div>
+                    <pre class="lib-card-code">${escapeHtml(ex.dsl)}</pre>
+                    <div class="lib-card-action">Click to load</div>
+                </div>
+            `).join('');
+        }
+
+        function loadExample(el) {
+            const dsl = el.getAttribute('data-dsl');
+            document.getElementById('dsl-editor').value = dsl;
+            parseCards();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function escapeAttr(s) {
+            return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        function escapeHtml(s) {
+            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        // ---- Parse / Validate ----
         async function parseCards() {
             const dsl = document.getElementById('dsl-editor').value;
             const status = document.getElementById('status');
@@ -90,6 +324,19 @@
         }
 
         function renderCard(card) {
+            const categoryLabels = {
+                keyword: 'KEYWORD',
+                effect: 'EFFECT',
+                trigger: 'TRIGGER',
+                activated: 'ACTIVATED',
+            };
+            const categoryClasses = {
+                keyword: 'tag-keyword',
+                effect: 'tag-effect',
+                trigger: 'tag-trigger',
+                activated: 'tag-activated',
+            };
+
             let html = `<div class="card">`;
             html += `<div class="card-header">`;
             html += `<span class="card-name">${card.name}</span>`;
@@ -97,25 +344,43 @@
             html += `</div>`;
             html += `<div class="card-type">${card.type}`;
             if (card.subtypes && card.subtypes.length) {
-                html += ` — ${card.subtypes.join(' ')}`;
+                html += ` &mdash; ${card.subtypes.join(' ')}`;
             }
             html += `</div>`;
             if (card.rules_text) {
                 html += `<div class="card-rules">${card.rules_text}</div>`;
             }
-            if (card.effects && card.effects.length) {
-                html += `<div class="card-effects">`;
-                card.effects.forEach(e => {
-                    html += `<div class="effect">${JSON.stringify(e)}</div>`;
-                });
-                html += `</div>`;
-            }
             if (card.power !== undefined) {
                 html += `<div class="card-pt">${card.power}/${card.toughness}</div>`;
+            }
+            if (card.loyalty !== undefined) {
+                html += `<div class="card-pt">Loyalty: ${card.loyalty}</div>`;
+            }
+            // Translation breakdown
+            if (card.translations && card.translations.length) {
+                html += `<div class="translation-panel">`;
+                html += `<div class="translation-header">Engine Translation</div>`;
+                card.translations.forEach(t => {
+                    const label = categoryLabels[t.category] || t.category.toUpperCase();
+                    const cls = categoryClasses[t.category] || 'tag-effect';
+                    html += `<div class="translation-row">`;
+                    html += `<span class="translation-tag ${cls}">${label}</span>`;
+                    html += `<code class="translation-dsl">${t.dsl}</code>`;
+                    html += `</div>`;
+                });
+                html += `</div>`;
+            } else {
+                html += `<div class="translation-panel">`;
+                html += `<div class="translation-header">Engine Translation</div>`;
+                html += `<div class="translation-empty">No translatable effects found.</div>`;
+                html += `</div>`;
             }
             html += `</div>`;
             return html;
         }
+
+        // Initialize library on load
+        renderLibrary();
     </script>
 </body>
 </html>

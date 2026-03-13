@@ -172,8 +172,254 @@ button:hover {
     text-align: center;
 }
 
+/* Translation panel */
+.translation-panel {
+    margin-top: 0.8rem;
+    border-top: 1px solid #533483;
+    padding-top: 0.6rem;
+}
+
+.translation-header {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #808098;
+    margin-bottom: 0.5rem;
+}
+
+.translation-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+}
+
+.translation-tag {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    white-space: nowrap;
+    min-width: 5.5rem;
+    text-align: center;
+}
+
+.tag-keyword {
+    background: #1b4332;
+    color: #95d5b2;
+}
+
+.tag-effect {
+    background: #0d3b66;
+    color: #80c0ff;
+}
+
+.tag-trigger {
+    background: #5c2d91;
+    color: #c4a8e0;
+}
+
+.tag-activated {
+    background: #7c4a03;
+    color: #f0c040;
+}
+
+.translation-dsl {
+    font-family: "Fira Code", "Consolas", monospace;
+    font-size: 0.8rem;
+    color: #d0d0e0;
+    background: #0a0a1a;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    flex: 1;
+}
+
+.translation-empty {
+    font-size: 0.8rem;
+    color: #606080;
+    font-style: italic;
+}
+
+/* ---- Example Library ---- */
+
+.library-section {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 1.5rem 2rem 2rem;
+    border-top: 1px solid #2a2a4e;
+}
+
+.library-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 1rem;
+}
+
+.lib-tab {
+    padding: 0.4rem 1rem;
+    background: #16213e;
+    color: #a0a0b0;
+    border: 1px solid #533483;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.lib-tab:hover {
+    background: #1c2d50;
+    color: #e0e0e0;
+}
+
+.lib-tab.active {
+    background: #e94560;
+    color: white;
+    border-color: #e94560;
+}
+
+.library-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0.8rem;
+}
+
+.lib-card {
+    background: #16213e;
+    border: 1px solid #533483;
+    border-radius: 6px;
+    padding: 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.1s;
+}
+
+.lib-card:hover {
+    border-color: #e94560;
+    transform: translateY(-1px);
+}
+
+.lib-card-name {
+    font-weight: bold;
+    color: #fff;
+    font-size: 0.95rem;
+    margin-bottom: 0.5rem;
+}
+
+.lib-card-code {
+    font-family: "Fira Code", "Consolas", monospace;
+    font-size: 0.72rem;
+    color: #90a0b0;
+    background: #0a0a1a;
+    padding: 0.5rem;
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: pre;
+    margin-bottom: 0.4rem;
+    max-height: 140px;
+    overflow-y: auto;
+}
+
+.lib-card-action {
+    font-size: 0.7rem;
+    color: #e94560;
+    text-align: right;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.lib-card:hover .lib-card-action {
+    opacity: 1;
+}
+
+/* ---- Card Schema Reference ---- */
+
+.reference-section {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 1.5rem 2rem 3rem;
+    border-top: 1px solid #2a2a4e;
+}
+
+.reference-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.ref-group {
+    background: #16213e;
+    border: 1px solid #533483;
+    border-radius: 6px;
+    padding: 1rem;
+}
+
+.ref-group h3 {
+    color: #e94560;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.6rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid #2a2a4e;
+}
+
+.ref-row {
+    display: flex;
+    gap: 0.6rem;
+    margin-bottom: 0.4rem;
+    align-items: baseline;
+}
+
+.ref-slot {
+    font-family: "Fira Code", "Consolas", monospace;
+    font-size: 0.82rem;
+    color: #f0c040;
+    white-space: nowrap;
+    min-width: 7rem;
+    flex-shrink: 0;
+}
+
+.ref-desc {
+    font-size: 0.8rem;
+    color: #a0a0b0;
+    line-height: 1.4;
+}
+
+.ref-desc code {
+    font-family: "Fira Code", "Consolas", monospace;
+    font-size: 0.78rem;
+    color: #80c0ff;
+    background: #0a0a1a;
+    padding: 0.1rem 0.3rem;
+    border-radius: 2px;
+}
+
+.ref-patterns {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.ref-patterns code {
+    font-family: "Fira Code", "Consolas", monospace;
+    font-size: 0.75rem;
+    color: #c0c0d0;
+    background: #0a0a1a;
+    padding: 0.3rem 0.5rem;
+    border-radius: 3px;
+    display: block;
+}
+
 @media (max-width: 768px) {
     main {
+        grid-template-columns: 1fr;
+    }
+    .reference-grid {
+        grid-template-columns: 1fr;
+    }
+    .library-grid {
         grid-template-columns: 1fr;
     }
 }

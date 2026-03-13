@@ -82,6 +82,19 @@ class CardTransformer(Transformer):
         if "replacement_effects" in props and props["replacement_effects"]:
             card.replacement_effects = props["replacement_effects"]
 
+        # Auto-generate from rules text when no explicit effects/keywords defined
+        if card.rules_text and not card.effects and not card.triggered_abilities and not card.activated_abilities and not card.keywords:
+            from mtg_engine.dsl.rules_parser import translate_rules_text
+            translated = translate_rules_text(card.rules_text)
+            if translated["effects"]:
+                card.effects = translated["effects"]
+            if translated["keywords"]:
+                card.keywords = translated["keywords"]
+            if translated["triggered_abilities"]:
+                card.triggered_abilities = translated["triggered_abilities"]
+            if translated["activated_abilities"]:
+                card.activated_abilities = translated["activated_abilities"]
+
         return card
 
     def card_body(self, items):
@@ -422,13 +435,35 @@ class CardTransformer(Transformer):
     def x_damage_effect(self, items):
         return {"type": "x_damage", "target": items[0]}
 
-    def target(self, items):
-        token = str(items[0])
-        if token == "self":
-            return {"kind": "self"}
-        if token == "each_opponent":
-            return {"kind": "each_opponent"}
-        return {"kind": "target", "target_type": token}
+    def target_self(self, items):
+        return {"kind": "self"}
+
+    def target_each_opp(self, items):
+        return {"kind": "each_opponent"}
+
+    def target_type_only(self, items):
+        return {"kind": "target", "target_type": str(items[0])}
+
+    def target_type_ctrl(self, items):
+        return {"kind": "target", "target_type": str(items[0]), "controller": str(items[1])}
+
+    def target_type_state(self, items):
+        return {"kind": "target", "target_type": str(items[0]), "state": str(items[1])}
+
+    def target_type_ctrl_state(self, items):
+        return {"kind": "target", "target_type": str(items[0]), "controller": str(items[1]), "state": str(items[2])}
+
+    def all_type_only(self, items):
+        return {"kind": "all", "target_type": str(items[0])}
+
+    def all_type_ctrl(self, items):
+        return {"kind": "all", "target_type": str(items[0]), "controller": str(items[1])}
+
+    def all_type_state(self, items):
+        return {"kind": "all", "target_type": str(items[0]), "state": str(items[1])}
+
+    def all_type_ctrl_state(self, items):
+        return {"kind": "all", "target_type": str(items[0]), "controller": str(items[1]), "state": str(items[2])}
 
 
 _parser = Lark(CARD_GRAMMAR, parser="lalr")
