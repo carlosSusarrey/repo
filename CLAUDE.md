@@ -6,7 +6,7 @@
   - `docs/GAP_ANALYSIS.md` — strike through completed items, update phase status
   - `README.md` — update "Implemented Mechanics" if the change adds a user-visible mechanic or major feature
 - **Track small tasks and future improvements**: Add discovered issues, tech debt, or small follow-ups to the "Future Improvements / Small Tasks" section below so they aren't lost between sessions.
-- **Tests**: Always run `python -m pytest` after changes. Current count: 702 tests.
+- **Tests**: Always run `python -m pytest` after changes. Current count: 711 tests.
 - **Commit style**: Imperative mood, explain "why" not "what". Include session link.
 
 ## Architecture
@@ -35,6 +35,7 @@
 - **Cycling**: Activated ability — discard from hand, pay `cycling_cost`, draw a card. `activate_cycling()` in Game.
 - **Prowess**: Triggered ability — whenever a noncreature spell is cast, each creature with prowess you control gets +1/+1 until EOT. Checked in `cast_spell`, creates `AbilityOnStack` entries.
 - **Rules text auto-translation**: `rules:` field auto-generates effects, keywords, triggers, and activated abilities via regex-based parser in `rules_parser.py`. Fallback-only — skipped when explicit `effect:`/`keywords:`/`when():`/`activate():` are defined. Supports controller qualifiers ("you don't control"), state qualifiers ("attacking", "tapped"), "all" quantifier ("destroy all creatures"), and planeswalker loyalty abilities ("+1: Draw a card", "−3: Destroy target creature").
+- **"May" (optional effects)**: DSL `may(effect)` and rules text "you may [effect]". Controller chooses whether to execute via `decision_callback` on `Game.__init__` (default: always accept). Declining is valid resolution (success=True, declined=True).
 - **Centralized filter vocabulary**: `filters.py` provides shared constants and matching logic for triggers, targets, and replacement effects. Controller qualifiers (`you`/`opponent`), state qualifiers (`attacking`/`blocking`/`tapped`/`untapped`), card type keywords, token status.
 - **Web UI**: Flask app with card DSL editor, live preview, engine translation panel, example library (12 categories), and card schema reference.
 
@@ -51,10 +52,11 @@
 ## Remaining Gaps (Phase 5+)
 See `docs/GAP_ANALYSIS.md` for full details. Key remaining items:
 - Copy effects (Fork, Clone)
-- Complex card primitives: "may" (optional effects), sacrifice-as-cost, conditional effects ("if you do"), spell copying, choose new targets — see plan in `.claude/plans/tender-snacking-raven.md`
+- Complex card primitives: sacrifice-as-cost, conditional effects ("if you do"), spell copying, choose new targets — see plan in `.claude/plans/tender-snacking-raven.md`
 
 ## Future Improvements / Small Tasks
 <!-- Add discovered issues, tech debt, and follow-ups here so they survive between sessions -->
+- Replace `decision_callback` (synchronous) with a queue-based decision system (`pending_decisions` on `GameState`) for async/UI integration when building interactive game clients
 - Route saga lore counter placement through a counter-modification system when Doubling Season / Vorinclex effects are implemented
 - Layer system dependency resolution (effects within same layer that depend on each other) not yet implemented
 - CR 616.1 ordering for multiple replacement effects applying to same event not yet implemented

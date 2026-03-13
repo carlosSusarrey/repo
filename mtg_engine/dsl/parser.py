@@ -435,6 +435,9 @@ class CardTransformer(Transformer):
     def x_damage_effect(self, items):
         return {"type": "x_damage", "target": items[0]}
 
+    def may_effect(self, items):
+        return {"type": "may", "inner_effect": items[0]}
+
     def target_self(self, items):
         return {"kind": "self"}
 

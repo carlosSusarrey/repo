@@ -460,6 +460,14 @@ def _parse_effect_text(text: str) -> list[dict]:
         if not part:
             continue
 
+        # Detect "you may" prefix — wrap inner effect in may
+        may_match = re.match(r"you\s+may\s+(.*)", part, re.IGNORECASE)
+        if may_match:
+            inner_effects = _parse_effect_text(may_match.group(1))
+            for inner in inner_effects:
+                all_effects.append({"type": "may", "inner_effect": inner})
+            continue
+
         # 1+2: Extract qualifiers, then strip for clean matching
         qualifiers = _extract_qualifiers(part)
         clean = _strip_qualifiers(part)

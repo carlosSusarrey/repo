@@ -743,3 +743,56 @@ class TestLoyaltyAbilities:
         """Loyalty ability with unrecognizable effect text is silently skipped."""
         result = translate_rules_text("+1: Do something completely custom and weird")
         assert len(result["activated_abilities"]) == 0
+
+
+# ---- "May" (optional effects) ----
+
+class TestMayEffects:
+    def test_may_draw(self):
+        result = translate_rules_text("You may draw a card")
+        assert len(result["effects"]) == 1
+        e = result["effects"][0]
+        assert e["type"] == "may"
+        assert e["inner_effect"]["type"] == "draw"
+        assert e["inner_effect"]["amount"] == 1
+
+    def test_may_destroy(self):
+        result = translate_rules_text("You may destroy target creature")
+        assert len(result["effects"]) == 1
+        e = result["effects"][0]
+        assert e["type"] == "may"
+        assert e["inner_effect"]["type"] == "destroy"
+
+    def test_may_gain_life(self):
+        result = translate_rules_text("You may gain 3 life")
+        assert len(result["effects"]) == 1
+        e = result["effects"][0]
+        assert e["type"] == "may"
+        assert e["inner_effect"]["type"] == "gain_life"
+        assert e["inner_effect"]["amount"] == 3
+
+    def test_may_in_triggered_ability(self):
+        result = translate_rules_text(
+            "When this creature enters the battlefield, you may draw a card"
+        )
+        assert len(result["triggered_abilities"]) == 1
+        ab = result["triggered_abilities"][0]
+        assert ab["trigger"] == "enters_battlefield"
+        assert any(e["type"] == "may" for e in ab["effects"])
+
+    def test_may_dsl_grammar(self):
+        dsl = '''
+        card "Opt" {
+            type: Instant
+            cost: {U}
+            effect: may(draw(1))
+        }
+        '''
+        cards = parse_card(dsl)
+        card = cards[0]
+        assert card.effects[0]["type"] == "may"
+        assert card.effects[0]["inner_effect"]["type"] == "draw"
+
+    def test_may_unrecognized_skipped(self):
+        result = translate_rules_text("You may do something weird")
+        assert len(result["effects"]) == 0

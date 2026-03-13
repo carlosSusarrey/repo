@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+from collections.abc import Callable
 from typing import Any
 
 from mtg_engine.core.card import Card, CardInstance
@@ -46,12 +47,20 @@ TURN_STRUCTURE = [
 class Game:
     """Manages the game loop and rule enforcement."""
 
-    def __init__(self, player_names: list[str], decks: list[list[Card]]) -> None:
+    def __init__(
+        self,
+        player_names: list[str],
+        decks: list[list[Card]],
+        decision_callback: Callable[[int, str, dict], bool] | None = None,
+    ) -> None:
         if len(player_names) != 2 or len(decks) != 2:
             raise ValueError("Currently supports exactly 2 players")
 
         self.state = GameState()
         self.log: list[str] = []
+        # Decision callback: (player_index, description, context) -> bool
+        # Used for "may" effects. Defaults to always accepting.
+        self._decision_callback = decision_callback or (lambda pi, desc, ctx: True)
 
         # Create players
         for name in player_names:
@@ -828,6 +837,23 @@ class Game:
                 if target_card and target_card.zone == Zone.BATTLEFIELD:
                     target_card.damage_marked += x_value
                     result["success"] = True
+
+        elif effect_type == "may":
+            inner = effect.get("inner_effect")
+            if inner:
+                accepted = self._decision_callback(
+                    item.controller_index,
+                    f"May: {inner.get('type', 'unknown')}",
+                    inner,
+                )
+                if accepted:
+                    inner_result = self._resolve_effect(inner, item)
+                    result["success"] = inner_result.get("success", False)
+                    result["inner_result"] = inner_result
+                else:
+                    # Declining is a valid resolution
+                    result["success"] = True
+                    result["declined"] = True
 
         return result
 

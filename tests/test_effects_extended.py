@@ -931,3 +931,50 @@ class TestComposableETBTriggers:
         # No trigger — Sol Ring is not a creature
         assert game.state.stack.is_empty
         assert len(game.state.get_zone(0, Zone.LIBRARY)) == library_before
+
+
+class TestMayEffect:
+    def test_may_accepted_draws_card(self):
+        """With default callback (accept), may(draw) draws a card."""
+        game = _setup_game()
+        hand_before = len(game.state.get_zone(0, Zone.HAND))
+
+        spell = Card(name="Opt", card_type=CardType.INSTANT, cost=ManaCost.parse("{U}"))
+        may_effect = {"type": "may", "inner_effect": {"type": "draw", "amount": 1}}
+        _cast_and_resolve(game, spell, effects=[may_effect])
+
+        assert len(game.state.get_zone(0, Zone.HAND)) == hand_before + 1
+
+    def test_may_declined_no_draw(self):
+        """With reject callback, may(draw) does not draw."""
+        game = Game(
+            ["Alice", "Bob"],
+            [_simple_deck(), _simple_deck()],
+            decision_callback=lambda pi, desc, ctx: False,
+        )
+        game.draw_opening_hands()
+        hand_before = len(game.state.get_zone(0, Zone.HAND))
+
+        spell = Card(name="Opt", card_type=CardType.INSTANT, cost=ManaCost.parse("{U}"))
+        may_effect = {"type": "may", "inner_effect": {"type": "draw", "amount": 1}}
+        _cast_and_resolve(game, spell, effects=[may_effect])
+
+        assert len(game.state.get_zone(0, Zone.HAND)) == hand_before
+
+    def test_may_declined_still_succeeds(self):
+        """Declining a may effect is valid resolution (success=True)."""
+        game = Game(
+            ["Alice", "Bob"],
+            [_simple_deck(), _simple_deck()],
+            decision_callback=lambda pi, desc, ctx: False,
+        )
+        game.draw_opening_hands()
+
+        may_effect = {"type": "may", "inner_effect": {"type": "draw", "amount": 1}}
+        item = AbilityOnStack(
+            source_id="test", controller_index=0,
+            card_name="Test", effects=[may_effect],
+        )
+        result = game._resolve_effect(may_effect, item)
+        assert result["success"] is True
+        assert result["declined"] is True
