@@ -1204,3 +1204,106 @@ class TestCopySpellEffect:
         copy.targets.append("Bob")
         assert item.targets == ["Alice"]
         assert copy.targets == ["Alice", "Bob"]
+
+
+class TestChooseNewTargets:
+    def test_default_callback_keeps_targets(self):
+        """Default target_callback keeps original targets."""
+        game = _setup_game()
+        copy_effect = {"type": "copy_spell", "copy_target": "self", "new_targets": True}
+        item = AbilityOnStack(
+            source_id="bolt", controller_index=0,
+            card_name="Lightning Bolt",
+            effects=[copy_effect],
+            targets=["Bob"],
+        )
+        game.state.stack.push(item)
+        result = game._resolve_effect(copy_effect, item)
+
+        assert result["success"] is True
+        copy = result["copy"]
+        assert copy.targets == ["Bob"]  # unchanged by default
+
+    def test_retarget_callback_changes_targets(self):
+        """Custom target_callback can redirect the copy."""
+        game = Game(
+            ["Alice", "Bob"],
+            [_simple_deck(), _simple_deck()],
+            target_callback=lambda pi, desc, targets: ["Alice"],
+        )
+        game.draw_opening_hands()
+
+        copy_effect = {"type": "copy_spell", "copy_target": "self", "new_targets": True}
+        item = AbilityOnStack(
+            source_id="bolt", controller_index=0,
+            card_name="Lightning Bolt",
+            effects=[copy_effect],
+            targets=["Bob"],
+        )
+        game.state.stack.push(item)
+        result = game._resolve_effect(copy_effect, item)
+
+        copy = result["copy"]
+        assert copy.targets == ["Alice"]  # retargeted
+
+    def test_no_retarget_when_flag_false(self):
+        """new_targets=False doesn't invoke the target callback."""
+        called = []
+        def track_callback(pi, desc, targets):
+            called.append(True)
+            return ["Alice"]
+
+        game = Game(
+            ["Alice", "Bob"],
+            [_simple_deck(), _simple_deck()],
+            target_callback=track_callback,
+        )
+        game.draw_opening_hands()
+
+        copy_effect = {"type": "copy_spell", "copy_target": "self", "new_targets": False}
+        item = AbilityOnStack(
+            source_id="bolt", controller_index=0,
+            card_name="Bolt",
+            effects=[copy_effect],
+            targets=["Bob"],
+        )
+        game.state.stack.push(item)
+        game._resolve_effect(copy_effect, item)
+
+        assert len(called) == 0  # callback was never invoked
+        copy = game.state.stack.peek()
+        assert copy.targets == ["Bob"]  # kept original
+
+    def test_retarget_copy_of_target_spell(self):
+        """Copying a targeted spell with new_targets retargets the copy."""
+        game = Game(
+            ["Alice", "Bob"],
+            [_simple_deck(), _simple_deck()],
+            target_callback=lambda pi, desc, targets: ["Alice"],
+        )
+        game.draw_opening_hands()
+
+        # Put a "spell" on the stack to copy
+        original = AbilityOnStack(
+            source_id="original_bolt", controller_index=1,
+            card_name="Lightning Bolt",
+            effects=[{"type": "damage", "amount": 3}],
+            targets=["Bob"],
+        )
+        game.state.stack.push(original)
+
+        # Fork copies the targeted spell with new targets
+        copy_effect = {"type": "copy_spell", "copy_target": "target_spell", "new_targets": True}
+        fork = AbilityOnStack(
+            source_id="fork", controller_index=0,
+            card_name="Fork",
+            effects=[copy_effect],
+            targets=["original_bolt"],
+        )
+        game.state.stack.push(fork)
+        result = game._resolve_effect(copy_effect, fork)
+
+        assert result["success"] is True
+        copy = result["copy"]
+        assert copy.targets == ["Alice"]  # retargeted
+        assert original.targets == ["Bob"]  # original unchanged

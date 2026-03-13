@@ -6,7 +6,7 @@
   - `docs/GAP_ANALYSIS.md` — strike through completed items, update phase status
   - `README.md` — update "Implemented Mechanics" if the change adds a user-visible mechanic or major feature
 - **Track small tasks and future improvements**: Add discovered issues, tech debt, or small follow-ups to the "Future Improvements / Small Tasks" section below so they aren't lost between sessions.
-- **Tests**: Always run `python -m pytest` after changes. Current count: 737 tests.
+- **Tests**: Always run `python -m pytest` after changes. Current count: 741 tests.
 - **Commit style**: Imperative mood, explain "why" not "what". Include session link.
 
 ## Architecture
@@ -38,7 +38,7 @@
 - **"May" (optional effects)**: DSL `may(effect)` and rules text "you may [effect]". Controller chooses whether to execute via `decision_callback` on `Game.__init__` (default: always accept). Declining is valid resolution (success=True, declined=True).
 - **Sacrifice as cost**: DSL `activate(sacrifice(creature)): effect` or `activate({2}, sacrifice(land)): effect`. Rules text "Sacrifice a creature: draw a card". `Game.activate_ability()` method handles cost payment (tap + sacrifice) before putting ability on stack. Validates type match.
 - **Conditional effects**: DSL `if_did(condition_effect, then_effect)` and rules text "If you do/did, [effect]". Condition is resolved first; then-effect fires only if condition succeeded and was not declined. Composes with `may` for "you may X. If you do, Y" patterns.
-- **Copy spell**: DSL `copy_spell(self)` or `copy_spell(target_spell, new_targets)`. Rules text "copy this spell", "copy target spell". `AbilityOnStack.copy()` creates independent duplicate on stack with inherited targets. Self-copy and target-copy supported. `new_targets` flag parsed but full retargeting deferred to Phase 6.
+- **Copy spell**: DSL `copy_spell(self)` or `copy_spell(target_spell, new_targets)`. Rules text "copy this spell", "copy target spell". `AbilityOnStack.copy()` creates independent duplicate on stack with inherited targets. Self-copy and target-copy supported. `new_targets` invokes `target_callback` on `Game.__init__` (default: keep original targets) to allow retargeting.
 - **Centralized filter vocabulary**: `filters.py` provides shared constants and matching logic for triggers, targets, and replacement effects. Controller qualifiers (`you`/`opponent`), state qualifiers (`attacking`/`blocking`/`tapped`/`untapped`), card type keywords, token status.
 - **Web UI**: Flask app with card DSL editor, live preview, engine translation panel, example library (12 categories), and card schema reference.
 
@@ -55,11 +55,11 @@
 ## Remaining Gaps (Phase 5+)
 See `docs/GAP_ANALYSIS.md` for full details. Key remaining items:
 - Copy effects: spell copying works (Fork), creature/permanent cloning (Clone) not yet implemented
-- Choose new targets for copied spells — `new_targets` flag is parsed but retargeting logic not yet wired to decision callback
 
 ## Future Improvements / Small Tasks
 <!-- Add discovered issues, tech debt, and follow-ups here so they survive between sessions -->
-- Replace `decision_callback` (synchronous) with a queue-based decision system (`pending_decisions` on `GameState`) for async/UI integration when building interactive game clients
+- Replace `decision_callback` and `target_callback` (synchronous) with a queue-based decision system (`pending_decisions` on `GameState`) for async/UI integration when building interactive game clients
+- `target_callback` does not validate that chosen targets are legal — add target legality checks for copied spells
 - Route saga lore counter placement through a counter-modification system when Doubling Season / Vorinclex effects are implemented
 - Layer system dependency resolution (effects within same layer that depend on each other) not yet implemented
 - CR 616.1 ordering for multiple replacement effects applying to same event not yet implemented

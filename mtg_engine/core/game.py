@@ -52,6 +52,7 @@ class Game:
         player_names: list[str],
         decks: list[list[Card]],
         decision_callback: Callable[[int, str, dict], bool] | None = None,
+        target_callback: Callable[[int, str, list[str]], list[str]] | None = None,
     ) -> None:
         if len(player_names) != 2 or len(decks) != 2:
             raise ValueError("Currently supports exactly 2 players")
@@ -61,6 +62,9 @@ class Game:
         # Decision callback: (player_index, description, context) -> bool
         # Used for "may" effects. Defaults to always accepting.
         self._decision_callback = decision_callback or (lambda pi, desc, ctx: True)
+        # Target callback: (player_index, description, current_targets) -> new_targets
+        # Used for "choose new targets" on copied spells. Defaults to keeping current.
+        self._target_callback = target_callback or (lambda pi, desc, targets: targets)
 
         # Create players
         for name in player_names:
@@ -887,11 +891,13 @@ class Game:
                         effects=list(item.effects),
                         targets=list(item.targets),
                     )
-                if new_targets:
-                    # Use decision callback to choose new targets
-                    # For now, the copy keeps original targets by default
-                    # (full retargeting requires target validation infrastructure)
-                    pass
+                if new_targets and copy.targets:
+                    chosen = self._target_callback(
+                        copy.controller_index,
+                        f"Choose new targets for {copy.card_name}",
+                        copy.targets,
+                    )
+                    copy.targets = chosen
                 self.state.stack.push(copy)
                 self._log(f"Copy of {item.card_name} put on stack")
                 result["success"] = True
@@ -905,6 +911,13 @@ class Game:
                             copy = stack_item.copy(
                                 new_controller=item.controller_index
                             )
+                            if new_targets and copy.targets:
+                                chosen = self._target_callback(
+                                    copy.controller_index,
+                                    f"Choose new targets for {copy.card_name}",
+                                    copy.targets,
+                                )
+                                copy.targets = chosen
                             self.state.stack.push(copy)
                             self._log(f"Copy of {stack_item.card_name} put on stack")
                             result["success"] = True
