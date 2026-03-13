@@ -656,3 +656,90 @@ class TestAllQuantifier:
         card = cards[0]
         assert card.effects[0]["target"]["kind"] == "all"
         assert card.effects[0]["target"]["target_type"] == "creature"
+
+
+# ---- Loyalty ability detection (planeswalkers) ----
+
+class TestLoyaltyAbilities:
+    def test_plus_loyalty_ability(self):
+        result = translate_rules_text("+1: Draw a card")
+        assert len(result["activated_abilities"]) == 1
+        ab = result["activated_abilities"][0]
+        assert ab["loyalty_cost"] == 1
+        assert ab["is_loyalty"] is True
+        assert any(e["type"] == "draw" for e in ab["effects"])
+
+    def test_minus_loyalty_ability(self):
+        result = translate_rules_text("-3: Destroy target creature")
+        assert len(result["activated_abilities"]) == 1
+        ab = result["activated_abilities"][0]
+        assert ab["loyalty_cost"] == -3
+        assert ab["is_loyalty"] is True
+        assert any(e["type"] == "destroy" for e in ab["effects"])
+
+    def test_zero_loyalty_ability(self):
+        result = translate_rules_text("0: Create a 0/1 white Goat creature token")
+        assert len(result["activated_abilities"]) == 1
+        ab = result["activated_abilities"][0]
+        assert ab["loyalty_cost"] == 0
+        assert ab["is_loyalty"] is True
+        assert any(e["type"] == "create_token" for e in ab["effects"])
+
+    def test_unicode_minus(self):
+        result = translate_rules_text("\u22122: Exile target creature")
+        assert len(result["activated_abilities"]) == 1
+        ab = result["activated_abilities"][0]
+        assert ab["loyalty_cost"] == -2
+        assert ab["is_loyalty"] is True
+
+    def test_large_loyalty_cost(self):
+        result = translate_rules_text("-7: Draw seven cards")
+        assert len(result["activated_abilities"]) == 1
+        ab = result["activated_abilities"][0]
+        assert ab["loyalty_cost"] == -7
+        assert any(e["type"] == "draw" for e in ab["effects"])
+
+    def test_damage_to_each_opponent(self):
+        result = translate_rules_text("+1: Each opponent loses 2 life")
+        assert len(result["activated_abilities"]) == 1
+        ab = result["activated_abilities"][0]
+        assert ab["loyalty_cost"] == 1
+        assert ab["is_loyalty"] is True
+
+    def test_multiple_loyalty_abilities(self):
+        text = "+1: Draw a card. -3: Destroy target creature. -7: Draw seven cards"
+        result = translate_rules_text(text)
+        assert len(result["activated_abilities"]) == 3
+        costs = [ab["loyalty_cost"] for ab in result["activated_abilities"]]
+        assert costs == [1, -3, -7]
+        assert all(ab["is_loyalty"] for ab in result["activated_abilities"])
+
+    def test_loyalty_with_keywords(self):
+        text = "Flying. +1: Draw a card. -2: Destroy target creature"
+        result = translate_rules_text(text)
+        from mtg_engine.core.keywords import Keyword
+        assert Keyword.FLYING in result["keywords"]
+        assert len(result["activated_abilities"]) == 2
+
+    def test_dsl_planeswalker_rules_text(self):
+        dsl = '''
+        card "Jace, Test Walker" {
+            type: Planeswalker
+            subtype: Jace
+            cost: {2}{U}{U}
+            loyalty: 4
+            rules: "+1: Draw a card. -2: Destroy target creature. -8: Draw eight cards"
+        }
+        '''
+        cards = parse_card(dsl)
+        card = cards[0]
+        assert len(card.activated_abilities) == 3
+        assert card.activated_abilities[0]["loyalty_cost"] == 1
+        assert card.activated_abilities[0]["is_loyalty"] is True
+        assert card.activated_abilities[1]["loyalty_cost"] == -2
+        assert card.activated_abilities[2]["loyalty_cost"] == -8
+
+    def test_loyalty_unrecognized_effect_skipped(self):
+        """Loyalty ability with unrecognizable effect text is silently skipped."""
+        result = translate_rules_text("+1: Do something completely custom and weird")
+        assert len(result["activated_abilities"]) == 0

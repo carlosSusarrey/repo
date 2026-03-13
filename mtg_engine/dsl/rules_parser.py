@@ -574,6 +574,35 @@ def _try_parse_activated(sentence: str) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
+# Loyalty ability detection (planeswalkers)
+# ---------------------------------------------------------------------------
+
+def _try_parse_loyalty_ability(sentence: str) -> dict | None:
+    """If *sentence* is a planeswalker loyalty ability, return an ability dict.
+
+    Matches patterns like: "+1: Draw a card", "−3: Destroy target creature",
+    "0: Create a 0/1 white Goat creature token".
+    Handles both ASCII minus (-) and unicode minus (−/\\u2212).
+    """
+    m = re.match(r"^([+\-\u2212]?\d+)\s*:\s*(.*)", sentence)
+    if not m:
+        return None
+    cost_str = m.group(1).replace("\u2212", "-")
+    loyalty_cost = int(cost_str)
+    effect_text = m.group(2).strip()
+    if not effect_text:
+        return None
+    effects = _parse_effect_text(effect_text)
+    if not effects:
+        return None
+    return {
+        "loyalty_cost": loyalty_cost,
+        "is_loyalty": True,
+        "effects": effects,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Sentence splitter
 # ---------------------------------------------------------------------------
 
@@ -616,13 +645,19 @@ def translate_rules_text(rules_text: str) -> dict:
             result["triggered_abilities"].append(triggered)
             continue
 
-        # 3. Activated ability?
+        # 3. Loyalty ability? (planeswalkers: "+1: effect", "−3: effect")
+        loyalty = _try_parse_loyalty_ability(sentence)
+        if loyalty is not None:
+            result["activated_abilities"].append(loyalty)
+            continue
+
+        # 4. Activated ability?
         activated = _try_parse_activated(sentence)
         if activated is not None:
             result["activated_abilities"].append(activated)
             continue
 
-        # 4. Standalone effect (for instants/sorceries)
+        # 5. Standalone effect (for instants/sorceries)
         effects = _parse_effect_text(sentence)
         if effects:
             result["effects"].extend(effects)
