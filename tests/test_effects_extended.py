@@ -978,3 +978,118 @@ class TestMayEffect:
         result = game._resolve_effect(may_effect, item)
         assert result["success"] is True
         assert result["declined"] is True
+
+
+class TestActivateAbilityWithSacrifice:
+    def test_sacrifice_cost_moves_to_graveyard(self):
+        """Sacrificing a permanent as cost moves it to graveyard."""
+        game = _setup_game()
+        # Create a card with sacrifice-cost activated ability
+        altar = Card(
+            name="Phyrexian Altar",
+            card_type=CardType.ARTIFACT,
+            cost=ManaCost.parse("{3}"),
+            activated_abilities=[{
+                "cost": {"sacrifice": "creature"},
+                "effects": [{"type": "add_mana", "color": "B"}],
+            }],
+        )
+        altar_inst = CardInstance(
+            card=altar, zone=Zone.BATTLEFIELD,
+            owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(altar_inst)
+
+        # Put a creature on battlefield to sacrifice
+        creature = game.state.cards[0]
+        creature.zone = Zone.BATTLEFIELD
+
+        result = game.activate_ability(
+            0, altar_inst.instance_id, 0,
+            sacrifice_id=creature.instance_id,
+        )
+        assert result is True
+        assert creature.zone == Zone.GRAVEYARD
+        assert not game.state.stack.is_empty
+
+    def test_sacrifice_wrong_type_rejected(self):
+        """Can't sacrifice a land when cost requires creature."""
+        game = _setup_game()
+        altar = Card(
+            name="Altar",
+            card_type=CardType.ARTIFACT,
+            cost=ManaCost.parse("{3}"),
+            activated_abilities=[{
+                "cost": {"sacrifice": "creature"},
+                "effects": [{"type": "draw", "amount": 1}],
+            }],
+        )
+        altar_inst = CardInstance(
+            card=altar, zone=Zone.BATTLEFIELD,
+            owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(altar_inst)
+
+        land = Card(name="Forest", card_type=CardType.LAND)
+        land_inst = CardInstance(
+            card=land, zone=Zone.BATTLEFIELD,
+            owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(land_inst)
+
+        result = game.activate_ability(
+            0, altar_inst.instance_id, 0,
+            sacrifice_id=land_inst.instance_id,
+        )
+        assert result is False
+        assert land_inst.zone == Zone.BATTLEFIELD
+
+    def test_sacrifice_cost_without_sacrifice_id_fails(self):
+        """Must provide sacrifice_id when ability has sacrifice cost."""
+        game = _setup_game()
+        altar = Card(
+            name="Altar",
+            card_type=CardType.ARTIFACT,
+            cost=ManaCost.parse("{3}"),
+            activated_abilities=[{
+                "cost": {"sacrifice": "creature"},
+                "effects": [{"type": "draw", "amount": 1}],
+            }],
+        )
+        altar_inst = CardInstance(
+            card=altar, zone=Zone.BATTLEFIELD,
+            owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(altar_inst)
+
+        result = game.activate_ability(0, altar_inst.instance_id, 0)
+        assert result is False
+
+    def test_tap_plus_sacrifice(self):
+        """Ability with tap + sacrifice cost taps the source and sacrifices."""
+        game = _setup_game()
+        altar = Card(
+            name="Altar",
+            card_type=CardType.ARTIFACT,
+            cost=ManaCost.parse("{3}"),
+            activated_abilities=[{
+                "cost": {"tap": True, "sacrifice": "creature"},
+                "effects": [{"type": "draw", "amount": 1}],
+            }],
+        )
+        altar_inst = CardInstance(
+            card=altar, zone=Zone.BATTLEFIELD,
+            owner_index=0, controller_index=0,
+        )
+        game.state.cards.append(altar_inst)
+
+        creature = game.state.cards[0]
+        creature.zone = Zone.BATTLEFIELD
+
+        result = game.activate_ability(
+            0, altar_inst.instance_id, 0,
+            sacrifice_id=creature.instance_id,
+        )
+        assert result is True
+        assert altar_inst.tapped is True
+        assert creature.zone == Zone.GRAVEYARD

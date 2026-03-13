@@ -1287,3 +1287,82 @@ class Game:
         self._log(f"{card.name} activates loyalty ability {ability_index}")
         self.state.reset_priority()
         return True
+
+    def activate_ability(
+        self, player_index: int, card_id: str, ability_index: int,
+        targets: list[str] | None = None,
+        sacrifice_id: str | None = None,
+    ) -> bool:
+        """Activate a non-loyalty, non-mana activated ability on a permanent.
+
+        Args:
+            sacrifice_id: Instance ID of permanent to sacrifice as part of cost,
+                          required when ability has a sacrifice cost.
+        """
+        card = self.state.find_card(card_id)
+        if card is None or card.controller_index != player_index:
+            return False
+        if card.zone != Zone.BATTLEFIELD:
+            return False
+        if ability_index < 0 or ability_index >= len(card.card.activated_abilities):
+            return False
+
+        ability_def = card.card.activated_abilities[ability_index]
+        cost = ability_def.get("cost", {})
+
+        # Skip loyalty abilities — use activate_planeswalker instead
+        if ability_def.get("is_loyalty"):
+            return False
+
+        # Pay tap cost
+        if cost.get("tap", False):
+            if card.tapped:
+                return False
+            card.tapped = True
+
+        # Pay sacrifice cost
+        sac_type = cost.get("sacrifice")
+        if sac_type:
+            if sacrifice_id is None:
+                # Undo tap if we tapped
+                if cost.get("tap", False):
+                    card.tapped = False
+                return False
+            sac_card = self.state.find_card(sacrifice_id)
+            if sac_card is None or sac_card.zone != Zone.BATTLEFIELD:
+                if cost.get("tap", False):
+                    card.tapped = False
+                return False
+            if sac_card.controller_index != player_index:
+                if cost.get("tap", False):
+                    card.tapped = False
+                return False
+            # Validate type
+            type_match = (
+                sac_type == "permanent"
+                or (sac_type == "creature" and sac_card.card.is_creature)
+                or (sac_type == "artifact" and CardType.ARTIFACT in sac_card.card.card_types)
+                or (sac_type == "enchantment" and CardType.ENCHANTMENT in sac_card.card.card_types)
+                or (sac_type == "land" and CardType.LAND in sac_card.card.card_types)
+            )
+            if not type_match:
+                if cost.get("tap", False):
+                    card.tapped = False
+                return False
+            # Sacrifice the permanent (costs don't use the stack)
+            self.state.move_card(sacrifice_id, Zone.GRAVEYARD)
+            self._log(f"{sac_card.name} is sacrificed as cost")
+
+        # Put ability on stack
+        effects = ability_def.get("effects", [])
+        ability = AbilityOnStack(
+            source_id=card.instance_id,
+            controller_index=player_index,
+            card_name=f"{card.name} ability",
+            effects=effects,
+            targets=targets or [],
+        )
+        self.state.stack.push(ability)
+        self._log(f"{card.name} activates ability {ability_index}")
+        self.state.reset_priority()
+        return True

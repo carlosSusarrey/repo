@@ -796,3 +796,63 @@ class TestMayEffects:
     def test_may_unrecognized_skipped(self):
         result = translate_rules_text("You may do something weird")
         assert len(result["effects"]) == 0
+
+
+# ---- Sacrifice as cost ----
+
+class TestSacrificeAsCost:
+    def test_sacrifice_only_cost(self):
+        result = translate_rules_text("Sacrifice a creature: draw a card")
+        assert len(result["activated_abilities"]) == 1
+        ab = result["activated_abilities"][0]
+        assert ab["cost"]["sacrifice"] == "creature"
+        assert "mana" not in ab["cost"]
+        assert any(e["type"] == "draw" for e in ab["effects"])
+
+    def test_sacrifice_land_cost(self):
+        result = translate_rules_text("Sacrifice a land: gain 1 life")
+        assert len(result["activated_abilities"]) == 1
+        ab = result["activated_abilities"][0]
+        assert ab["cost"]["sacrifice"] == "land"
+
+    def test_mana_plus_sacrifice(self):
+        result = translate_rules_text("{2}, Sacrifice a creature: draw two cards")
+        assert len(result["activated_abilities"]) == 1
+        ab = result["activated_abilities"][0]
+        assert ab["cost"]["mana"] == "{2}"
+        assert ab["cost"]["sacrifice"] == "creature"
+
+    def test_tap_plus_sacrifice(self):
+        result = translate_rules_text("{T}, Sacrifice a creature: draw a card")
+        assert len(result["activated_abilities"]) == 1
+        ab = result["activated_abilities"][0]
+        assert ab["cost"].get("tap") is True
+        assert ab["cost"]["sacrifice"] == "creature"
+
+    def test_dsl_sacrifice_cost(self):
+        dsl = '''
+        card "Sakura-Tribe Elder" {
+            type: Creature
+            cost: {1}{G}
+            p/t: 1/1
+            activate(sacrifice(creature)): draw(1)
+        }
+        '''
+        cards = parse_card(dsl)
+        card = cards[0]
+        assert len(card.activated_abilities) == 1
+        assert card.activated_abilities[0]["cost"]["sacrifice"] == "creature"
+
+    def test_dsl_mana_plus_sacrifice(self):
+        dsl = '''
+        card "Costly Altar" {
+            type: Artifact
+            cost: {3}
+            activate({2}, sacrifice(creature)): draw(2)
+        }
+        '''
+        cards = parse_card(dsl)
+        card = cards[0]
+        ab = card.activated_abilities[0]
+        assert ab["cost"]["sacrifice"] == "creature"
+        assert "mana" in ab["cost"]

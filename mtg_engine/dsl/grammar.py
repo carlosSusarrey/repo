@@ -52,7 +52,11 @@ keywords_prop: "keywords:" keyword_list
 triggered_prop: "when(" GAME_EVENT "," source_filter_list "):" effect
              | "when(" GAME_EVENT "):" effect
 source_filter_list: SOURCE_FILTER+
-activated_prop: "activate(" mana_cost "):" effect
+activated_prop: "activate(" mana_cost "," sacrifice_cost "):" effect
+             | "activate(" sacrifice_cost "):" effect
+             | "activate(" mana_cost "):" effect
+sacrifice_cost: "sacrifice(" SACRIFICE_TYPE ")"
+SACRIFICE_TYPE: "creature" | "artifact" | "enchantment" | "permanent" | "land"
 loyalty_ability_prop: "loyalty(" SIGNED_NUMBER "):" effect
 enchant_prop: "enchant:" ENCHANT_TYPE
 equip_prop: "equip:" mana_cost

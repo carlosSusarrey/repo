@@ -225,12 +225,37 @@ class CardTransformer(Transformer):
         }}
 
     def activated_prop(self, items):
-        mana_cost = items[0]
-        effect = items[1]
-        return {"activated": {
-            "cost": {"mana": str(mana_cost), "tap": True},
-            "effects": [effect] if not isinstance(effect, list) else effect,
-        }}
+        # Three forms: (mana, sacrifice, effect), (sacrifice, effect), (mana, effect)
+        if len(items) == 3:
+            # activate(mana, sacrifice(type)): effect
+            mana_cost = items[0]
+            sac_type = items[1]
+            effect = items[2]
+            return {"activated": {
+                "cost": {"mana": str(mana_cost), "tap": True, "sacrifice": sac_type},
+                "effects": [effect] if not isinstance(effect, list) else effect,
+            }}
+        elif len(items) == 2 and isinstance(items[0], str) and items[0] in (
+            "creature", "artifact", "enchantment", "permanent", "land",
+        ):
+            # activate(sacrifice(type)): effect
+            sac_type = items[0]
+            effect = items[1]
+            return {"activated": {
+                "cost": {"sacrifice": sac_type},
+                "effects": [effect] if not isinstance(effect, list) else effect,
+            }}
+        else:
+            # activate(mana): effect
+            mana_cost = items[0]
+            effect = items[1]
+            return {"activated": {
+                "cost": {"mana": str(mana_cost), "tap": True},
+                "effects": [effect] if not isinstance(effect, list) else effect,
+            }}
+
+    def sacrifice_cost(self, items):
+        return str(items[0]).strip()
 
     def loyalty_ability_prop(self, items):
         loyalty_cost = int(items[0])

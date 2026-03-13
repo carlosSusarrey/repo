@@ -546,8 +546,48 @@ def _try_parse_triggered(sentence: str) -> dict | None:
 # Activated ability detection
 # ---------------------------------------------------------------------------
 
+_SAC_TYPES = r"(creature|artifact|enchantment|permanent|land)"
+
+
 def _try_parse_activated(sentence: str) -> dict | None:
     """If *sentence* is an activated ability, return an ability dict."""
+    # "Sacrifice a/an [type]: effect"
+    m = re.match(r"[Ss]acrifice\s+(?:a|an)\s+" + _SAC_TYPES + r"\s*:\s*(.*)", sentence)
+    if m:
+        sac_type = m.group(1).lower()
+        effects = _parse_effect_text(m.group(2))
+        if effects:
+            return {
+                "cost": {"sacrifice": sac_type},
+                "effects": effects,
+            }
+
+    # "{T}, sacrifice a/an [type]: effect" (must come before generic {mana} pattern)
+    m = re.match(
+        r"(?:\{T\}|[Tt]ap),\s*[Ss]acrifice\s+(?:a|an)\s+" + _SAC_TYPES + r"\s*:\s*(.*)",
+        sentence,
+    )
+    if m:
+        effects = _parse_effect_text(m.group(2))
+        if effects:
+            return {
+                "cost": {"mana": "{0}", "tap": True, "sacrifice": m.group(1).lower()},
+                "effects": effects,
+            }
+
+    # "{mana}, sacrifice a/an [type]: effect"
+    m = re.match(
+        r"(\{[^}]+\}(?:\{[^}]+\})*),\s*[Ss]acrifice\s+(?:a|an)\s+" + _SAC_TYPES + r"\s*:\s*(.*)",
+        sentence,
+    )
+    if m:
+        effects = _parse_effect_text(m.group(3))
+        if effects:
+            return {
+                "cost": {"mana": m.group(1), "sacrifice": m.group(2).lower()},
+                "effects": effects,
+            }
+
     # "{T}: effect" or "Tap: effect"
     m = re.match(r"(?:\{T\}|[Tt]ap)\s*:\s*(.*)", sentence)
     if m:
