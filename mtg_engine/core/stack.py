@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy as _copy
 from dataclasses import dataclass, field
 from typing import Any, Protocol, Union, runtime_checkable
 
@@ -39,6 +40,19 @@ class AbilityOnStack:
     card_name: str
     effects: list[dict[str, Any]] = field(default_factory=list)
     targets: list[str] = field(default_factory=list)
+
+    def copy(self, new_controller: int | None = None) -> AbilityOnStack:
+        """Create a copy of this ability (CR 707.10).
+
+        The copy inherits the original's targets by default.
+        """
+        return AbilityOnStack(
+            source_id=self.source_id,
+            controller_index=new_controller if new_controller is not None else self.controller_index,
+            card_name=f"{self.card_name} (copy)",
+            effects=_copy.deepcopy(self.effects),
+            targets=list(self.targets),
+        )
 
     def __str__(self) -> str:
         target_str = f" targeting {', '.join(self.targets)}" if self.targets else ""

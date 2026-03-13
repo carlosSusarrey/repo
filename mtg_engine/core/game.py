@@ -870,6 +870,47 @@ class Game:
                     result["success"] = True
                     result["skipped_then"] = True
 
+        elif effect_type == "copy_spell":
+            copy_target = effect.get("copy_target", "self")
+            new_targets = effect.get("new_targets", False)
+
+            if copy_target == "self":
+                # Copy the resolving spell/ability itself
+                if isinstance(item, AbilityOnStack):
+                    copy = item.copy()
+                else:
+                    # CardInstance on stack — create an AbilityOnStack clone
+                    copy = AbilityOnStack(
+                        source_id=item.source_id,
+                        controller_index=item.controller_index,
+                        card_name=f"{item.card_name} (copy)",
+                        effects=list(item.effects),
+                        targets=list(item.targets),
+                    )
+                if new_targets:
+                    # Use decision callback to choose new targets
+                    # For now, the copy keeps original targets by default
+                    # (full retargeting requires target validation infrastructure)
+                    pass
+                self.state.stack.push(copy)
+                self._log(f"Copy of {item.card_name} put on stack")
+                result["success"] = True
+                result["copy"] = copy
+            elif copy_target == "target_spell":
+                # Copy a targeted spell on the stack
+                for target_id in item.targets:
+                    for stack_item in self.state.stack:
+                        if (isinstance(stack_item, AbilityOnStack)
+                                and stack_item.source_id == target_id):
+                            copy = stack_item.copy(
+                                new_controller=item.controller_index
+                            )
+                            self.state.stack.push(copy)
+                            self._log(f"Copy of {stack_item.card_name} put on stack")
+                            result["success"] = True
+                            result["copy"] = copy
+                            break
+
         return result
 
     # ---- Token Creation ----

@@ -466,6 +466,12 @@ class CardTransformer(Transformer):
     def if_did_effect(self, items):
         return {"type": "if_did", "condition_effect": items[0], "then_effect": items[1]}
 
+    def copy_spell_same(self, items):
+        return {"type": "copy_spell", "copy_target": str(items[0]).strip(), "new_targets": False}
+
+    def copy_spell_retarget(self, items):
+        return {"type": "copy_spell", "copy_target": str(items[0]).strip(), "new_targets": True}
+
     def target_self(self, items):
         return {"kind": "self"}
 

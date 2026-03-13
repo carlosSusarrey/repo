@@ -423,6 +423,14 @@ _EFFECT_PATTERNS: list[tuple[str, Any]] = [
     # Self gains keyword until EOT
     (r"(?:~|this creature|it|CARDNAME)\s+gains?\s+(flying|first strike|double strike|deathtouch|trample|lifelink|vigilance|haste|hexproof|menace|indestructible|reach)(?:\s+until\s+end\s+of\s+turn)?",
      _parse_self_keyword_effect),
+
+    # Copy spell
+    (r"cop(?:y|ies)\s+(?:this spell|~|it|CARDNAME)(?:\s+and\s+(?:may\s+)?choose\s+(?:a\s+)?new\s+targets?)?",
+     lambda m: [{"type": "copy_spell", "copy_target": "self",
+                 "new_targets": "new target" in m.group(0).lower()}]),
+    (r"cop(?:y|ies)\s+target\s+(?:instant|sorcery|spell)(?:\s+and\s+(?:may\s+)?choose\s+(?:a\s+)?new\s+targets?)?",
+     lambda m: [{"type": "copy_spell", "copy_target": "target_spell",
+                 "new_targets": "new target" in m.group(0).lower()}]),
 ]
 
 _ALL_PATTERNS: list[tuple[str, Any]] = [

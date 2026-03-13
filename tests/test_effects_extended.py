@@ -1150,3 +1150,57 @@ class TestIfDidEffect:
         result = game._resolve_effect(if_did, item)
         assert result["success"] is True
         assert "skipped_then" not in result
+
+
+class TestCopySpellEffect:
+    def test_copy_self_puts_copy_on_stack(self):
+        """copy_spell(self) puts a copy of the ability on the stack."""
+        game = _setup_game()
+        copy_effect = {"type": "copy_spell", "copy_target": "self", "new_targets": False}
+        damage_effect = {"type": "damage", "target": {"kind": "target", "target_type": "player"}, "amount": 3}
+
+        item = AbilityOnStack(
+            source_id="bolt", controller_index=0,
+            card_name="Lightning Bolt",
+            effects=[damage_effect, copy_effect],
+            targets=["Bob"],
+        )
+        game.state.stack.push(item)
+
+        # Resolve — will process damage, then copy_spell puts copy on stack
+        result = game._resolve_effect(copy_effect, item)
+        assert result["success"] is True
+        assert game.state.stack.size == 2  # original + copy
+        copy = game.state.stack.peek()
+        assert "(copy)" in copy.card_name
+        assert copy.targets == ["Bob"]  # inherited targets
+
+    def test_copy_has_same_effects(self):
+        """The copy has the same effects as the original."""
+        game = _setup_game()
+        draw_effect = {"type": "draw", "amount": 2}
+        copy_effect = {"type": "copy_spell", "copy_target": "self", "new_targets": False}
+
+        item = AbilityOnStack(
+            source_id="test", controller_index=0,
+            card_name="Divination",
+            effects=[draw_effect, copy_effect],
+            targets=[],
+        )
+        game.state.stack.push(item)
+        game._resolve_effect(copy_effect, item)
+
+        copy = game.state.stack.peek()
+        assert copy.effects == [draw_effect, copy_effect]
+
+    def test_copy_is_independent(self):
+        """Modifying the copy's targets doesn't affect the original."""
+        game = _setup_game()
+        item = AbilityOnStack(
+            source_id="bolt", controller_index=0,
+            card_name="Bolt", effects=[], targets=["Alice"],
+        )
+        copy = item.copy()
+        copy.targets.append("Bob")
+        assert item.targets == ["Alice"]
+        assert copy.targets == ["Alice", "Bob"]

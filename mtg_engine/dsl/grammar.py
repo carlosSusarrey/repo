@@ -108,6 +108,7 @@ effect_single: damage_effect
       | x_damage_effect
       | may_effect
       | if_did_effect
+      | copy_spell_effect
 
 damage_effect: "damage(" target "," NUMBER ")"
 destroy_effect: "destroy(" target ")"
@@ -129,6 +130,9 @@ sacrifice_effect: "sacrifice(" target ")"
 x_damage_effect: "x_damage(" target ")"
 may_effect: "may(" effect_single ")"
 if_did_effect: "if_did(" effect_single "," effect_single ")"
+copy_spell_effect: "copy_spell(" COPY_TARGET "," "new_targets" ")" -> copy_spell_retarget
+                 | "copy_spell(" COPY_TARGET ")"                   -> copy_spell_same
+COPY_TARGET: "self" | "target_spell"
 
 target: "target(" TARGET_TYPE "," CONTROLLER_QUALIFIER "," STATE_QUALIFIER ")"  -> target_type_ctrl_state
       | "target(" TARGET_TYPE "," CONTROLLER_QUALIFIER ")"                     -> target_type_ctrl

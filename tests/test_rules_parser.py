@@ -907,3 +907,57 @@ class TestIfDidEffects:
         assert card.effects[0]["type"] == "if_did"
         assert card.effects[0]["condition_effect"]["type"] == "may"
         assert card.effects[0]["then_effect"]["type"] == "draw"
+
+
+# ---- Copy spell ----
+
+class TestCopySpell:
+    def test_copy_self_rules_text(self):
+        result = translate_rules_text("Copy this spell")
+        assert len(result["effects"]) == 1
+        e = result["effects"][0]
+        assert e["type"] == "copy_spell"
+        assert e["copy_target"] == "self"
+        assert e["new_targets"] is False
+
+    def test_copy_self_new_targets(self):
+        result = translate_rules_text("Copy this spell and choose new targets")
+        assert len(result["effects"]) == 1
+        e = result["effects"][0]
+        assert e["type"] == "copy_spell"
+        assert e["new_targets"] is True
+
+    def test_copy_target_spell(self):
+        result = translate_rules_text("Copy target instant or sorcery spell")
+        assert len(result["effects"]) == 1
+        e = result["effects"][0]
+        assert e["type"] == "copy_spell"
+        assert e["copy_target"] == "target_spell"
+
+    def test_dsl_copy_spell_self(self):
+        dsl = '''
+        card "Doublecast" {
+            type: Sorcery
+            cost: {R}{R}
+            effect: copy_spell(self)
+        }
+        '''
+        cards = parse_card(dsl)
+        card = cards[0]
+        assert card.effects[0]["type"] == "copy_spell"
+        assert card.effects[0]["copy_target"] == "self"
+        assert card.effects[0]["new_targets"] is False
+
+    def test_dsl_copy_spell_retarget(self):
+        dsl = '''
+        card "Fork" {
+            type: Instant
+            cost: {R}{R}
+            effect: copy_spell(target_spell, new_targets)
+        }
+        '''
+        cards = parse_card(dsl)
+        card = cards[0]
+        assert card.effects[0]["type"] == "copy_spell"
+        assert card.effects[0]["copy_target"] == "target_spell"
+        assert card.effects[0]["new_targets"] is True
