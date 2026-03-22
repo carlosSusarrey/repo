@@ -14,7 +14,56 @@
 - **Event system**: `mtg_engine/core/events.py` — unified `GameEvent` enum, typed event data classes, `EventBus` dispatcher
 - **Stack system**: `AbilityOnStack` for triggered/activated abilities, `CardInstance` implements `Stackable` protocol for spells
 - **SBAs**: All in `GameState.check_state_based_actions()` in `game_state.py`
+- **DSL layer**: `mtg_engine/dsl/` — grammar (`grammar.py`), parser (`parser.py`), regex rules translator (`rules_parser.py`), LLM rules translator (`llm_rules_parser.py`)
 - **Tests**: `tests/` directory, run with `python -m pytest`
+
+## LLM Rules Translation (`llm_rules_parser.py`)
+
+The LLM translator is the **primary** path for converting natural language MTG rules text into engine effect dicts. It replaces the regex-based `rules_parser.py` as the default, with regex as fallback.
+
+### How it works
+1. **`parser.py`** calls `translate_rules_text_llm()` when a card has `rules:` text but no explicit `effect:`/`keywords:`/`when():`/`activate():` definitions
+2. **`llm_rules_parser.py`** sends the rules text to Claude with a system prompt containing the full effect schema, valid types, and 40 few-shot examples
+3. Claude returns JSON matching the engine's effect dict format
+4. **Validation layer** checks every effect type, target, trigger event, and keyword against `VALID_*` frozensets — rejects anything the engine doesn't support
+5. **Normalization** converts keyword strings to `Keyword` enum values
+6. If the LLM call fails (no API key, network error, invalid output), **falls back to regex parser** transparently
+
+### Keeping the system prompt in sync — IMPORTANT
+The system prompt is **auto-generated** from data structures, not hardcoded. The function `_build_system_prompt()` builds it at import time from:
+
+| Data source | What it generates in the prompt |
+|---|---|
+| `VALID_EFFECT_TYPES` + `EFFECT_TYPE_DOCS` | "Effect types and their fields" section |
+| `VALID_TARGET_KINDS` | Target dict `kind` values |
+| `VALID_TARGET_TYPES` | Target dict `target_type` values |
+| `VALID_CONTROLLER_QUALIFIERS` | Target dict `controller` values |
+| `VALID_STATE_QUALIFIERS` | Target dict `state` values |
+| `VALID_TRIGGER_EVENTS` | Triggered ability `trigger` values |
+| `VALID_KEYWORDS` (from `KEYWORD_MAP`) | Keywords list |
+
+**Sync tests** in `tests/test_llm_rules_parser.py::TestPromptSync` verify every `VALID_*` entry appears in both the docs mapping and the generated prompt. These tests **fail immediately** if anything drifts.
+
+### How to add a new effect type
+When adding a new effect type to the engine (e.g., `"untap"`):
+
+1. **`game.py`**: Add handler in `_resolve_effect()` — `elif effect_type == "untap": ...`
+2. **`llm_rules_parser.py`**: Add to **both**:
+   - `VALID_EFFECT_TYPES` frozenset — `"untap"`
+   - `EFFECT_TYPE_DOCS` dict — `"untap": "{type, target}"`
+3. **`rules_parser.py`**: Add regex pattern to `_EFFECT_PATTERNS` (for offline fallback)
+4. **`llm_rules_parser.py` examples**: Add an Input/Output example to the `_build_system_prompt()` f-string examples section
+5. **Tests**: Add test in `test_rules_parser.py` and optionally `test_llm_rules_parser.py`
+
+The system prompt auto-updates from steps 2. The sync tests catch it if you forget `EFFECT_TYPE_DOCS`.
+
+### How to add a new target type, trigger event, keyword, or qualifier
+Same pattern — add to the relevant `VALID_*` frozenset in `llm_rules_parser.py`. For keywords, add to `KEYWORD_MAP` in `keywords.py` (which `VALID_KEYWORDS` reads automatically). The prompt regenerates, sync tests verify.
+
+### Configuration
+- `ANTHROPIC_API_KEY` env var enables LLM translation. Without it, regex fallback is used silently.
+- Uses `claude-sonnet-4-20250514` model for cost/speed balance.
+- `translate_rules_text_llm(rules_text, api_key=None, fallback=True)` — `api_key` overrides env var, `fallback=False` disables regex fallback.
 
 ## What's Already Implemented
 - **SBAs**: lethal damage, 0 toughness, 0 life, poison, planeswalker 0 loyalty, legend rule, counter cancellation (+1/+1 vs -1/-1), battle 0 defense, token cease-to-exist, aura attachment legality, saga sacrifice
