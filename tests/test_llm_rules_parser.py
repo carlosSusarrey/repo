@@ -17,6 +17,7 @@ from mtg_engine.dsl.llm_rules_parser import (
     _validate_triggered,
     _validate_activated,
     _normalize_result,
+    _parse_llm_response,
     _build_system_prompt,
     translate_rules_text_llm,
     VALID_EFFECT_TYPES,
@@ -349,6 +350,132 @@ class TestTranslateWithMockedAPI:
 
         result = translate_rules_text_llm("Flying", api_key="test-key", fallback=True)
         assert Keyword.FLYING in result["keywords"]
+
+
+# ---------------------------------------------------------------------------
+# OpenAI-compatible provider tests (local LLMs: Ollama, vLLM, etc.)
+# ---------------------------------------------------------------------------
+
+def _mock_openai_response(content: dict) -> MagicMock:
+    """Create a mock OpenAI-compatible API response."""
+    mock_response = MagicMock()
+    mock_choice = MagicMock()
+    mock_message = MagicMock()
+    mock_message.content = json.dumps(content)
+    mock_choice.message = mock_message
+    mock_response.choices = [mock_choice]
+    return mock_response
+
+
+class TestOpenAIProvider:
+    """Test the OpenAI-compatible provider path (for local LLMs)."""
+
+    @patch("mtg_engine.dsl.llm_rules_parser.openai")
+    @patch.dict("os.environ", {"LLM_PROVIDER": "openai", "LLM_BASE_URL": "http://localhost:11434/v1", "LLM_MODEL": "llama3"})
+    def test_openai_provider_damage(self, mock_openai_module):
+        mock_client = MagicMock()
+        mock_openai_module.OpenAI.return_value = mock_client
+        mock_client.chat.completions.create.return_value = _mock_openai_response({
+            "effects": [{"type": "damage", "target": {"kind": "target", "target_type": "any_target"}, "amount": 3}],
+            "keywords": [],
+            "triggered_abilities": [],
+            "activated_abilities": [],
+        })
+
+        result = translate_rules_text_llm("Deal 3 damage to any target.", api_key="not-needed", fallback=False)
+        assert len(result["effects"]) == 1
+        assert result["effects"][0]["type"] == "damage"
+        assert result["effects"][0]["amount"] == 3
+
+        # Verify it called OpenAI with the right base_url
+        mock_openai_module.OpenAI.assert_called_once_with(api_key="not-needed", base_url="http://localhost:11434/v1")
+
+    @patch("mtg_engine.dsl.llm_rules_parser.openai")
+    @patch.dict("os.environ", {"LLM_PROVIDER": "openai", "LLM_BASE_URL": "http://localhost:11434/v1", "LLM_MODEL": "llama3"})
+    def test_openai_provider_uses_configured_model(self, mock_openai_module):
+        mock_client = MagicMock()
+        mock_openai_module.OpenAI.return_value = mock_client
+        mock_client.chat.completions.create.return_value = _mock_openai_response({
+            "effects": [{"type": "draw", "amount": 1}],
+            "keywords": [],
+            "triggered_abilities": [],
+            "activated_abilities": [],
+        })
+
+        translate_rules_text_llm("Draw a card.", api_key="test", fallback=False)
+
+        # Verify model was passed from LLM_MODEL env var
+        call_kwargs = mock_client.chat.completions.create.call_args
+        assert call_kwargs.kwargs["model"] == "llama3"
+
+    @patch("mtg_engine.dsl.llm_rules_parser.openai")
+    @patch.dict("os.environ", {"LLM_PROVIDER": "openai", "LLM_BASE_URL": "http://localhost:8080/v1"})
+    def test_openai_provider_validation_failure_falls_back(self, mock_openai_module):
+        """Invalid LLM output from local model triggers regex fallback."""
+        mock_client = MagicMock()
+        mock_openai_module.OpenAI.return_value = mock_client
+        mock_client.chat.completions.create.return_value = _mock_openai_response({
+            "effects": [{"type": "fireball"}],  # Invalid
+            "keywords": [],
+            "triggered_abilities": [],
+            "activated_abilities": [],
+        })
+
+        result = translate_rules_text_llm("Deal 3 damage to any target.", api_key="test", fallback=True)
+        # Falls back to regex
+        assert result["effects"][0]["type"] == "damage"
+
+    @patch("mtg_engine.dsl.llm_rules_parser.openai")
+    @patch.dict("os.environ", {"LLM_PROVIDER": "openai", "LLM_BASE_URL": "http://localhost:11434/v1"})
+    def test_openai_provider_api_error_falls_back(self, mock_openai_module):
+        """Network error from local server triggers regex fallback."""
+        mock_client = MagicMock()
+        mock_openai_module.OpenAI.return_value = mock_client
+        mock_client.chat.completions.create.side_effect = ConnectionError("Connection refused")
+
+        result = translate_rules_text_llm("Flying", api_key="test", fallback=True)
+        assert Keyword.FLYING in result["keywords"]
+
+    @patch("mtg_engine.dsl.llm_rules_parser.anthropic")
+    @patch.dict("os.environ", {"LLM_PROVIDER": "anthropic", "LLM_MODEL": "claude-haiku-4-5-20251001"}, clear=False)
+    def test_anthropic_model_override(self, mock_anthropic_module):
+        """LLM_MODEL overrides default model for Anthropic provider."""
+        mock_client = MagicMock()
+        mock_anthropic_module.Anthropic.return_value = mock_client
+        mock_client.messages.create.return_value = _mock_api_response({
+            "effects": [{"type": "draw", "amount": 1}],
+            "keywords": [],
+            "triggered_abilities": [],
+            "activated_abilities": [],
+        })
+
+        translate_rules_text_llm("Draw a card.", api_key="test", fallback=False)
+
+        call_kwargs = mock_client.messages.create.call_args
+        assert call_kwargs.kwargs["model"] == "claude-haiku-4-5-20251001"
+
+
+class TestParseResponse:
+    """Test the shared response parsing logic."""
+
+    def test_clean_json(self):
+        result = _parse_llm_response('{"effects": [], "keywords": [], "triggered_abilities": [], "activated_abilities": []}')
+        assert result is not None
+        assert result["effects"] == []
+
+    def test_markdown_fences(self):
+        result = _parse_llm_response('```json\n{"effects": []}\n```')
+        assert result is not None
+
+    def test_invalid_json(self):
+        result = _parse_llm_response("not json at all")
+        assert result is None
+
+    def test_missing_keys_filled(self):
+        result = _parse_llm_response('{"effects": []}')
+        assert result["keywords"] == []
+        assert result["triggered_abilities"] == []
+        assert result["activated_abilities"] == []
 
 
 # ---------------------------------------------------------------------------

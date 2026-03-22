@@ -6,7 +6,7 @@
   - `docs/GAP_ANALYSIS.md` — strike through completed items, update phase status
   - `README.md` — update "Implemented Mechanics" if the change adds a user-visible mechanic or major feature
 - **Track small tasks and future improvements**: Add discovered issues, tech debt, or small follow-ups to the "Future Improvements / Small Tasks" section below so they aren't lost between sessions.
-- **Tests**: Always run `python -m pytest` after changes. Current count: 789 tests.
+- **Tests**: Always run `python -m pytest` after changes. Current count: 798 tests.
 - **Commit style**: Imperative mood, explain "why" not "what". Include session link.
 
 ## Architecture
@@ -60,10 +60,37 @@ The system prompt auto-updates from steps 2. The sync tests catch it if you forg
 ### How to add a new target type, trigger event, keyword, or qualifier
 Same pattern — add to the relevant `VALID_*` frozenset in `llm_rules_parser.py`. For keywords, add to `KEYWORD_MAP` in `keywords.py` (which `VALID_KEYWORDS` reads automatically). The prompt regenerates, sync tests verify.
 
-### Configuration
-- `ANTHROPIC_API_KEY` env var enables LLM translation. Without it, regex fallback is used silently.
-- Uses `claude-sonnet-4-20250514` model for cost/speed balance.
-- `translate_rules_text_llm(rules_text, api_key=None, fallback=True)` — `api_key` overrides env var, `fallback=False` disables regex fallback.
+### Configuration — LLM provider selection
+
+The LLM provider is configured via environment variables. Supports Anthropic (cloud) and any OpenAI-compatible server (local LLMs).
+
+**Anthropic (default):**
+```bash
+export LLM_PROVIDER=anthropic          # or just leave unset
+export ANTHROPIC_API_KEY=sk-ant-...    # required
+export LLM_MODEL=claude-sonnet-4-20250514  # optional, this is the default
+```
+
+**Local LLMs (Ollama, vLLM, llama.cpp, LM Studio, LocalAI, etc.):**
+```bash
+export LLM_PROVIDER=openai
+export LLM_BASE_URL=http://localhost:11434/v1   # your local server's OpenAI-compatible endpoint
+export LLM_API_KEY=not-needed                   # required by SDK but often ignored by local servers
+export LLM_MODEL=llama3                         # model name your server knows
+```
+
+**Common local setups:**
+| Server | LLM_BASE_URL | Notes |
+|---|---|---|
+| Ollama | `http://localhost:11434/v1` | Run `ollama serve` first |
+| vLLM | `http://localhost:8000/v1` | `python -m vllm.entrypoints.openai.api_server` |
+| llama.cpp | `http://localhost:8080/v1` | `./server -m model.gguf` |
+| LM Studio | `http://localhost:1234/v1` | Start local server in UI |
+| LocalAI | `http://localhost:8080/v1` | Follow LocalAI docs |
+
+**Fallback behavior:** If no API key is set, or the LLM call fails, or validation rejects the output, the regex parser (`rules_parser.py`) handles it transparently. No configuration needed for offline-only use.
+
+**Programmatic override:** `translate_rules_text_llm(rules_text, api_key="...", fallback=True)` — `api_key` overrides env vars, `fallback=False` disables regex fallback.
 
 ## What's Already Implemented
 - **SBAs**: lethal damage, 0 toughness, 0 life, poison, planeswalker 0 loyalty, legend rule, counter cancellation (+1/+1 vs -1/-1), battle 0 defense, token cease-to-exist, aura attachment legality, saga sacrifice
@@ -83,7 +110,7 @@ Same pattern — add to the relevant `VALID_*` frozenset in `llm_rules_parser.py
 - **Phyrexian mana**: `{R/P}` style costs payable with mana or 2 life. `cast_spell(phyrexian_life_pay=[indices])` for life payment.
 - **Cycling**: Activated ability — discard from hand, pay `cycling_cost`, draw a card. `activate_cycling()` in Game.
 - **Prowess**: Triggered ability — whenever a noncreature spell is cast, each creature with prowess you control gets +1/+1 until EOT. Checked in `cast_spell`, creates `AbilityOnStack` entries.
-- **Rules text auto-translation**: `rules:` field auto-generates effects, keywords, triggers, and activated abilities. Primary translator is LLM-based (`llm_rules_parser.py`) using Claude API — understands natural language rules text and produces validated effect dicts. Falls back to regex-based parser (`rules_parser.py`) when no API key is set or LLM output fails validation. Skipped when explicit `effect:`/`keywords:`/`when():`/`activate():` are defined. Set `ANTHROPIC_API_KEY` env var to enable LLM translation.
+- **Rules text auto-translation**: `rules:` field auto-generates effects, keywords, triggers, and activated abilities. Primary translator is LLM-based (`llm_rules_parser.py`) — supports Anthropic (Claude) and any OpenAI-compatible server (Ollama, vLLM, llama.cpp, LM Studio, etc.) for local LLM inference. Falls back to regex-based parser (`rules_parser.py`) when no API key is set or LLM output fails validation. Skipped when explicit `effect:`/`keywords:`/`when():`/`activate():` are defined. Set `ANTHROPIC_API_KEY` env var to enable LLM translation.
 - **"May" (optional effects)**: DSL `may(effect)` and rules text "you may [effect]". Controller chooses whether to execute via `decision_callback` on `Game.__init__` (default: always accept). Declining is valid resolution (success=True, declined=True).
 - **Sacrifice as cost**: DSL `activate(sacrifice(creature)): effect` or `activate({2}, sacrifice(land)): effect`. Rules text "Sacrifice a creature: draw a card". `Game.activate_ability()` method handles cost payment (tap + sacrifice) before putting ability on stack. Validates type match.
 - **Conditional effects**: DSL `if_did(condition_effect, then_effect)` and rules text "If you do/did, [effect]". Condition is resolved first; then-effect fires only if condition succeeded and was not declined. Composes with `may` for "you may X. If you do, Y" patterns.

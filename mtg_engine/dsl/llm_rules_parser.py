@@ -22,6 +22,11 @@ try:
 except ImportError:
     anthropic = None  # type: ignore[assignment]
 
+try:
+    import openai
+except ImportError:
+    openai = None  # type: ignore[assignment]
+
 from mtg_engine.core.keywords import Keyword, KEYWORD_MAP
 
 logger = logging.getLogger(__name__)
@@ -431,59 +436,124 @@ def _normalize_result(result: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# LLM API call
+# LLM provider configuration
+# ---------------------------------------------------------------------------
+#
+# Provider is selected via the LLM_PROVIDER env var (default: "anthropic").
+#
+# Anthropic (default):
+#   LLM_PROVIDER=anthropic  (or unset)
+#   ANTHROPIC_API_KEY=sk-ant-...
+#   LLM_MODEL=claude-sonnet-4-20250514  (optional override)
+#
+# OpenAI-compatible (Ollama, vLLM, llama.cpp, LM Studio, LocalAI, OpenAI, etc.):
+#   LLM_PROVIDER=openai
+#   LLM_BASE_URL=http://localhost:11434/v1   (your local server)
+#   LLM_API_KEY=not-needed                   (some servers ignore this, but the field is required)
+#   LLM_MODEL=llama3                         (model name your server knows)
+#
 # ---------------------------------------------------------------------------
 
-def _get_api_key() -> str | None:
-    """Get Anthropic API key from environment."""
-    return os.environ.get("ANTHROPIC_API_KEY")
+DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-20250514"
+DEFAULT_OPENAI_MODEL = "gpt-4o"
 
 
-def _call_llm(rules_text: str, api_key: str | None = None) -> dict | None:
-    """Call Claude API to translate rules text, return parsed dict or None on failure."""
-    key = api_key or _get_api_key()
-    if not key:
-        logger.debug("No ANTHROPIC_API_KEY set, skipping LLM parser")
-        return None
+def _get_llm_config() -> dict[str, str | None]:
+    """Read LLM provider configuration from environment variables."""
+    return {
+        "provider": os.environ.get("LLM_PROVIDER", "anthropic").lower(),
+        "api_key": os.environ.get("LLM_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"),
+        "base_url": os.environ.get("LLM_BASE_URL"),
+        "model": os.environ.get("LLM_MODEL"),
+    }
 
+
+# ---------------------------------------------------------------------------
+# LLM API call — multi-provider
+# ---------------------------------------------------------------------------
+
+def _call_anthropic(rules_text: str, api_key: str, model: str | None) -> str:
+    """Call Anthropic API, return raw response text."""
     if anthropic is None:
-        logger.debug("anthropic package not installed, skipping LLM parser")
-        return None
+        raise RuntimeError("anthropic package not installed — pip install anthropic")
+    client = anthropic.Anthropic(api_key=api_key)
+    response = client.messages.create(
+        model=model or DEFAULT_ANTHROPIC_MODEL,
+        max_tokens=2048,
+        system=SYSTEM_PROMPT,
+        messages=[
+            {"role": "user", "content": f"Translate this MTG rules text:\n\n{rules_text}"}
+        ],
+    )
+    return response.content[0].text.strip()
+
+
+def _call_openai_compatible(
+    rules_text: str, api_key: str, model: str | None, base_url: str | None
+) -> str:
+    """Call an OpenAI-compatible API (local or remote), return raw response text."""
+    if openai is None:
+        raise RuntimeError("openai package not installed — pip install openai")
+    client = openai.OpenAI(api_key=api_key, base_url=base_url)
+    response = client.chat.completions.create(
+        model=model or DEFAULT_OPENAI_MODEL,
+        max_tokens=2048,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": f"Translate this MTG rules text:\n\n{rules_text}"},
+        ],
+    )
+    return response.choices[0].message.content.strip()
+
+
+def _parse_llm_response(raw_text: str) -> dict | None:
+    """Parse raw LLM response text into a result dict."""
+    # Strip markdown fences if present
+    if raw_text.startswith("```"):
+        lines = raw_text.split("\n")
+        lines = [line for line in lines if not line.strip().startswith("```")]
+        raw_text = "\n".join(lines)
 
     try:
-        client = anthropic.Anthropic(api_key=key)
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2048,
-            system=SYSTEM_PROMPT,
-            messages=[
-                {"role": "user", "content": f"Translate this MTG rules text:\n\n{rules_text}"}
-            ],
-        )
-        raw_text = response.content[0].text.strip()
-
-        # Strip markdown fences if present
-        if raw_text.startswith("```"):
-            lines = raw_text.split("\n")
-            # Remove first and last fence lines
-            lines = [l for l in lines if not l.strip().startswith("```")]
-            raw_text = "\n".join(lines)
-
         result = json.loads(raw_text)
-
-        # Ensure expected keys exist
-        result.setdefault("effects", [])
-        result.setdefault("keywords", [])
-        result.setdefault("triggered_abilities", [])
-        result.setdefault("activated_abilities", [])
-
-        return result
-
     except json.JSONDecodeError as e:
         logger.warning("LLM returned invalid JSON: %s", e)
         return None
+
+    # Ensure expected keys exist
+    result.setdefault("effects", [])
+    result.setdefault("keywords", [])
+    result.setdefault("triggered_abilities", [])
+    result.setdefault("activated_abilities", [])
+    return result
+
+
+def _call_llm(rules_text: str, api_key: str | None = None) -> dict | None:
+    """Call configured LLM provider to translate rules text.
+
+    Returns parsed dict or None on failure.
+    """
+    config = _get_llm_config()
+    provider = config["provider"]
+    key = api_key or config["api_key"]
+
+    if not key:
+        logger.debug("No API key configured, skipping LLM parser")
+        return None
+
+    try:
+        if provider == "openai":
+            raw = _call_openai_compatible(
+                rules_text, key, config["model"], config["base_url"],
+            )
+        else:
+            # Default: anthropic
+            raw = _call_anthropic(rules_text, key, config["model"])
+
+        return _parse_llm_response(raw)
+
     except Exception as e:
-        logger.warning("LLM API call failed: %s", e)
+        logger.warning("LLM API call failed (%s): %s", provider, e)
         return None
 
 
@@ -497,11 +567,17 @@ def translate_rules_text_llm(
     api_key: str | None = None,
     fallback: bool = True,
 ) -> dict:
-    """Translate MTG rules text into structured effects using Claude.
+    """Translate MTG rules text into structured effects using an LLM.
+
+    The LLM provider is configured via environment variables:
+      LLM_PROVIDER  — "anthropic" (default) or "openai" (for any OpenAI-compatible server)
+      LLM_BASE_URL  — base URL for OpenAI-compatible servers (e.g. http://localhost:11434/v1)
+      LLM_API_KEY   — API key (falls back to ANTHROPIC_API_KEY)
+      LLM_MODEL     — model name override
 
     Args:
         rules_text: Natural language MTG rules text.
-        api_key: Optional API key override (otherwise uses ANTHROPIC_API_KEY env var).
+        api_key: Optional API key override (otherwise uses env vars).
         fallback: If True (default), fall back to regex parser on failure.
 
     Returns:
