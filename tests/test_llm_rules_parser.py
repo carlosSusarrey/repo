@@ -17,10 +17,17 @@ from mtg_engine.dsl.llm_rules_parser import (
     _validate_triggered,
     _validate_activated,
     _normalize_result,
+    _build_system_prompt,
     translate_rules_text_llm,
     VALID_EFFECT_TYPES,
     VALID_TARGET_KINDS,
     VALID_TARGET_TYPES,
+    VALID_TRIGGER_EVENTS,
+    VALID_CONTROLLER_QUALIFIERS,
+    VALID_STATE_QUALIFIERS,
+    VALID_KEYWORDS,
+    EFFECT_TYPE_DOCS,
+    SYSTEM_PROMPT,
 )
 
 
@@ -342,3 +349,56 @@ class TestTranslateWithMockedAPI:
 
         result = translate_rules_text_llm("Flying", api_key="test-key", fallback=True)
         assert Keyword.FLYING in result["keywords"]
+
+
+# ---------------------------------------------------------------------------
+# Sync tests — ensure VALID_* sets and prompt stay in sync
+# ---------------------------------------------------------------------------
+
+class TestPromptSync:
+    """Verify that the auto-generated system prompt reflects all VALID_* sets."""
+
+    def test_all_effect_types_documented(self):
+        """Every VALID_EFFECT_TYPE must have an entry in EFFECT_TYPE_DOCS."""
+        missing = VALID_EFFECT_TYPES - set(EFFECT_TYPE_DOCS.keys())
+        assert missing == set(), f"Effect types in VALID_EFFECT_TYPES but not EFFECT_TYPE_DOCS: {missing}"
+
+    def test_no_extra_docs(self):
+        """EFFECT_TYPE_DOCS should not contain types not in VALID_EFFECT_TYPES."""
+        extra = set(EFFECT_TYPE_DOCS.keys()) - VALID_EFFECT_TYPES
+        assert extra == set(), f"Effect types in EFFECT_TYPE_DOCS but not VALID_EFFECT_TYPES: {extra}"
+
+    def test_all_effect_types_in_prompt(self):
+        """Every valid effect type must appear in the generated system prompt."""
+        for etype in VALID_EFFECT_TYPES:
+            assert etype in SYSTEM_PROMPT, f"Effect type {etype!r} missing from system prompt"
+
+    def test_all_target_kinds_in_prompt(self):
+        for kind in VALID_TARGET_KINDS:
+            assert f'"{kind}"' in SYSTEM_PROMPT, f"Target kind {kind!r} missing from system prompt"
+
+    def test_all_target_types_in_prompt(self):
+        for ttype in VALID_TARGET_TYPES:
+            assert f'"{ttype}"' in SYSTEM_PROMPT, f"Target type {ttype!r} missing from system prompt"
+
+    def test_all_trigger_events_in_prompt(self):
+        for event in VALID_TRIGGER_EVENTS:
+            assert f'"{event}"' in SYSTEM_PROMPT, f"Trigger event {event!r} missing from system prompt"
+
+    def test_all_keywords_in_prompt(self):
+        for kw in VALID_KEYWORDS:
+            assert f'"{kw}"' in SYSTEM_PROMPT, f"Keyword {kw!r} missing from system prompt"
+
+    def test_all_controller_qualifiers_in_prompt(self):
+        for ctrl in VALID_CONTROLLER_QUALIFIERS:
+            assert f'"{ctrl}"' in SYSTEM_PROMPT, f"Controller qualifier {ctrl!r} missing from system prompt"
+
+    def test_all_state_qualifiers_in_prompt(self):
+        for state in VALID_STATE_QUALIFIERS:
+            assert f'"{state}"' in SYSTEM_PROMPT, f"State qualifier {state!r} missing from system prompt"
+
+    def test_prompt_builds_without_error(self):
+        """Smoke test that _build_system_prompt runs and produces non-empty output."""
+        prompt = _build_system_prompt()
+        assert len(prompt) > 500
+        assert "Effect types and their fields" in prompt
