@@ -6,7 +6,7 @@
   - `docs/GAP_ANALYSIS.md` — strike through completed items, update phase status
   - `README.md` — update "Implemented Mechanics" if the change adds a user-visible mechanic or major feature
 - **Track small tasks and future improvements**: Add discovered issues, tech debt, or small follow-ups to the "Future Improvements / Small Tasks" section below so they aren't lost between sessions.
-- **Tests**: Always run `python -m pytest` after changes. Current count: 741 tests.
+- **Tests**: Always run `python -m pytest` after changes. Current count: 779 tests.
 - **Commit style**: Imperative mood, explain "why" not "what". Include session link.
 
 ## Architecture
@@ -34,7 +34,7 @@
 - **Phyrexian mana**: `{R/P}` style costs payable with mana or 2 life. `cast_spell(phyrexian_life_pay=[indices])` for life payment.
 - **Cycling**: Activated ability — discard from hand, pay `cycling_cost`, draw a card. `activate_cycling()` in Game.
 - **Prowess**: Triggered ability — whenever a noncreature spell is cast, each creature with prowess you control gets +1/+1 until EOT. Checked in `cast_spell`, creates `AbilityOnStack` entries.
-- **Rules text auto-translation**: `rules:` field auto-generates effects, keywords, triggers, and activated abilities via regex-based parser in `rules_parser.py`. Fallback-only — skipped when explicit `effect:`/`keywords:`/`when():`/`activate():` are defined. Supports controller qualifiers ("you don't control"), state qualifiers ("attacking", "tapped"), "all" quantifier ("destroy all creatures"), and planeswalker loyalty abilities ("+1: Draw a card", "−3: Destroy target creature").
+- **Rules text auto-translation**: `rules:` field auto-generates effects, keywords, triggers, and activated abilities. Primary translator is LLM-based (`llm_rules_parser.py`) using Claude API — understands natural language rules text and produces validated effect dicts. Falls back to regex-based parser (`rules_parser.py`) when no API key is set or LLM output fails validation. Skipped when explicit `effect:`/`keywords:`/`when():`/`activate():` are defined. Set `ANTHROPIC_API_KEY` env var to enable LLM translation.
 - **"May" (optional effects)**: DSL `may(effect)` and rules text "you may [effect]". Controller chooses whether to execute via `decision_callback` on `Game.__init__` (default: always accept). Declining is valid resolution (success=True, declined=True).
 - **Sacrifice as cost**: DSL `activate(sacrifice(creature)): effect` or `activate({2}, sacrifice(land)): effect`. Rules text "Sacrifice a creature: draw a card". `Game.activate_ability()` method handles cost payment (tap + sacrifice) before putting ability on stack. Validates type match.
 - **Conditional effects**: DSL `if_did(condition_effect, then_effect)` and rules text "If you do/did, [effect]". Condition is resolved first; then-effect fires only if condition succeeded and was not declined. Composes with `may` for "you may X. If you do, Y" patterns.

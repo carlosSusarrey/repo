@@ -6,6 +6,7 @@ A Magic: The Gathering rules engine for designing and testing custom cards. Defi
 
 - **Rules Engine**: Implements MTG game rules including phases, priority, the stack, and zone management
 - **Card DSL**: Define cards using a human-readable grammar that maps to engine mechanics
+- **LLM-Powered Rules Translation**: Natural language rules text is translated to engine instructions via Claude API (with regex fallback)
 - **Game Simulation**: Run games between decks to test card interactions
 - **CLI**: Command-line interface for running simulations and testing cards
 - **Web UI**: Browser-based card designer and game simulator

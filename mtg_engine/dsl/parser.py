@@ -84,8 +84,8 @@ class CardTransformer(Transformer):
 
         # Auto-generate from rules text when no explicit effects/keywords defined
         if card.rules_text and not card.effects and not card.triggered_abilities and not card.activated_abilities and not card.keywords:
-            from mtg_engine.dsl.rules_parser import translate_rules_text
-            translated = translate_rules_text(card.rules_text)
+            from mtg_engine.dsl.llm_rules_parser import translate_rules_text_llm
+            translated = translate_rules_text_llm(card.rules_text)
             if translated["effects"]:
                 card.effects = translated["effects"]
             if translated["keywords"]:

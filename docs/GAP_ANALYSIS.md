@@ -428,6 +428,7 @@ Full `ReplacementEffectManager` with layering per CR 614:
 - Basic card properties (name, type, cost, P/T, subtypes, rules text)
 - Effects: damage, destroy, draw, gain_life, lose_life, counter, tap, create_token
 - Targets: target(type), self, each_opponent, all(type)
+- **LLM-powered rules translation**: Claude API translates natural language rules text → validated effect dicts (with regex fallback when no API key or validation failure)
 
 ### Missing DSL Features
 - **Keywords**: `keywords: flying, lifelink, first_strike`
