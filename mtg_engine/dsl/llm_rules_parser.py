@@ -162,6 +162,141 @@ Use underscore-separated lowercase names: "flying", "first_strike", "double_stri
 8. Compound effects (separated by periods or commas) produce multiple effect dicts
 9. For create_token, emit one dict per token (if "create two 1/1 tokens", emit 2 dicts)
 10. Return ONLY valid JSON. No explanation, no markdown fences.
+11. "you don't control" or "an opponent controls" → controller: "opponent"
+12. "you control" → controller: "you"
+13. "attacking", "blocking", "tapped", "untapped" before a type → state qualifier
+14. Controller and state qualifiers are OPTIONAL — omit keys entirely when not specified in the rules text.
+
+## Examples
+
+Input: "Flying, first strike, lifelink"
+Output: {"effects": [], "keywords": ["flying", "first_strike", "lifelink"], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Deal 3 damage to any target."
+Output: {"effects": [{"type": "damage", "target": {"kind": "target", "target_type": "any_target"}, "amount": 3}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Deal X damage to any target."
+Output: {"effects": [{"type": "x_damage", "target": {"kind": "target", "target_type": "any_target"}}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Draw a card."
+Output: {"effects": [{"type": "draw", "amount": 1}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Gain 3 life."
+Output: {"effects": [{"type": "gain_life", "amount": 3}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Each opponent loses 2 life."
+Output: {"effects": [{"type": "lose_life", "target": {"kind": "each_opponent"}, "amount": 2}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Destroy target creature."
+Output: {"effects": [{"type": "destroy", "target": {"kind": "target", "target_type": "creature"}}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Exile target creature an opponent controls."
+Output: {"effects": [{"type": "exile", "target": {"kind": "target", "target_type": "creature", "controller": "opponent"}}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Return target creature to its owner's hand."
+Output: {"effects": [{"type": "bounce", "target": {"kind": "target", "target_type": "creature"}}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Counter target spell."
+Output: {"effects": [{"type": "counter", "target": {"kind": "target", "target_type": "spell"}}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Target creature gets +3/+3 until end of turn."
+Output: {"effects": [{"type": "pump", "target": {"kind": "target", "target_type": "creature"}, "power": 3, "toughness": 3}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "~ gets +2/+2 until end of turn."
+Output: {"effects": [{"type": "pump", "target": {"kind": "self"}, "power": 2, "toughness": 2}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Scry 2."
+Output: {"effects": [{"type": "scry", "amount": 2}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Mill 3."
+Output: {"effects": [{"type": "mill", "amount": 3}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Tap target creature."
+Output: {"effects": [{"type": "tap", "target": {"kind": "target", "target_type": "creature"}}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Create a 1/1 Soldier creature token."
+Output: {"effects": [{"type": "create_token", "name": "Soldier", "power": 1, "toughness": 1}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Create two 1/1 white Soldier creature tokens."
+Output: {"effects": [{"type": "create_token", "name": "white Soldier", "power": 1, "toughness": 1}, {"type": "create_token", "name": "white Soldier", "power": 1, "toughness": 1}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Destroy target attacking creature you don't control."
+Output: {"effects": [{"type": "destroy", "target": {"kind": "target", "target_type": "creature", "state": "attacking", "controller": "opponent"}}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Deal 4 damage to target tapped creature you don't control."
+Output: {"effects": [{"type": "damage", "target": {"kind": "target", "target_type": "creature", "state": "tapped", "controller": "opponent"}, "amount": 4}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Destroy all creatures."
+Output: {"effects": [{"type": "destroy", "target": {"kind": "all", "target_type": "creature"}}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Exile all attacking creatures."
+Output: {"effects": [{"type": "exile", "target": {"kind": "all", "target_type": "creature", "state": "attacking"}}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "All creatures get +1/+1 until end of turn."
+Output: {"effects": [{"type": "pump", "target": {"kind": "all", "target_type": "creature"}, "power": 1, "toughness": 1}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "When ~ enters the battlefield, draw a card."
+Output: {"effects": [], "keywords": [], "triggered_abilities": [{"trigger": "enters_battlefield", "source": {"type": "self"}, "effects": [{"type": "draw", "amount": 1}]}], "activated_abilities": []}
+
+Input: "When ~ dies, each opponent loses 2 life."
+Output: {"effects": [], "keywords": [], "triggered_abilities": [{"trigger": "dies", "source": {"type": "self"}, "effects": [{"type": "lose_life", "target": {"kind": "each_opponent"}, "amount": 2}]}], "activated_abilities": []}
+
+Input: "Whenever ~ attacks, deal 1 damage to each opponent."
+Output: {"effects": [], "keywords": [], "triggered_abilities": [{"trigger": "attacks", "source": {"type": "self"}, "effects": [{"type": "damage", "target": {"kind": "each_opponent"}, "amount": 1}]}], "activated_abilities": []}
+
+Input: "At the beginning of your upkeep, draw a card."
+Output: {"effects": [], "keywords": [], "triggered_abilities": [{"trigger": "begin_upkeep", "source": {"type": "self"}, "effects": [{"type": "draw", "amount": 1}]}], "activated_abilities": []}
+
+Input: "{T}: Add {G}."
+Output: {"effects": [], "keywords": [], "triggered_abilities": [], "activated_abilities": [{"cost": {"tap": true}, "effects": [{"type": "add_mana", "color": "G"}]}]}
+
+Input: "{2}{R}: Deal 2 damage to any target."
+Output: {"effects": [], "keywords": [], "triggered_abilities": [], "activated_abilities": [{"cost": {"mana": "{2}{R}"}, "effects": [{"type": "damage", "target": {"kind": "target", "target_type": "any_target"}, "amount": 2}]}]}
+
+Input: "Sacrifice a creature: draw a card"
+Output: {"effects": [], "keywords": [], "triggered_abilities": [], "activated_abilities": [{"cost": {"sacrifice": "creature"}, "effects": [{"type": "draw", "amount": 1}]}]}
+
+Input: "{T}, Sacrifice a creature: draw a card"
+Output: {"effects": [], "keywords": [], "triggered_abilities": [], "activated_abilities": [{"cost": {"tap": true, "sacrifice": "creature"}, "effects": [{"type": "draw", "amount": 1}]}]}
+
+Input: "{2}, Sacrifice a creature: draw two cards"
+Output: {"effects": [], "keywords": [], "triggered_abilities": [], "activated_abilities": [{"cost": {"mana": "{2}", "sacrifice": "creature"}, "effects": [{"type": "draw", "amount": 2}]}]}
+
+Input: "+1: Draw a card"
+Output: {"effects": [], "keywords": [], "triggered_abilities": [], "activated_abilities": [{"loyalty_cost": 1, "is_loyalty": true, "effects": [{"type": "draw", "amount": 1}]}]}
+
+Input: "−3: Destroy target creature"
+Output: {"effects": [], "keywords": [], "triggered_abilities": [], "activated_abilities": [{"loyalty_cost": -3, "is_loyalty": true, "effects": [{"type": "destroy", "target": {"kind": "target", "target_type": "creature"}}]}]}
+
+Input: "You may draw a card"
+Output: {"effects": [{"type": "may", "inner_effect": {"type": "draw", "amount": 1}}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "When this creature enters the battlefield, you may draw a card"
+Output: {"effects": [], "keywords": [], "triggered_abilities": [{"trigger": "enters_battlefield", "source": {"type": "self"}, "effects": [{"type": "may", "inner_effect": {"type": "draw", "amount": 1}}]}], "activated_abilities": []}
+
+Input: "You may sacrifice a creature. If you do, draw two cards"
+Output: {"effects": [{"type": "if_did", "condition_effect": {"type": "may", "inner_effect": {"type": "sacrifice", "target": {"kind": "target", "target_type": "creature"}}}, "then_effect": {"type": "draw", "amount": 2}}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Copy this spell"
+Output: {"effects": [{"type": "copy_spell", "copy_target": "self", "new_targets": false}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Copy this spell and choose new targets"
+Output: {"effects": [{"type": "copy_spell", "copy_target": "self", "new_targets": true}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Copy target instant or sorcery spell"
+Output: {"effects": [{"type": "copy_spell", "copy_target": "target_spell", "new_targets": false}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "~ gains flying until end of turn."
+Output: {"effects": [{"type": "add_keyword", "target": {"kind": "self"}, "keyword": "flying"}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Put a +1/+1 counter on ~."
+Output: {"effects": [{"type": "add_counter", "target": {"kind": "self"}, "counter_type": "+1/+1", "amount": 1}], "keywords": [], "triggered_abilities": [], "activated_abilities": []}
+
+Input: "Defender. When ~ enters the battlefield, draw a card."
+Output: {"effects": [], "keywords": ["defender"], "triggered_abilities": [{"trigger": "enters_battlefield", "source": {"type": "self"}, "effects": [{"type": "draw", "amount": 1}]}], "activated_abilities": []}
+
+Input: "Flying. Deal 3 damage to any target."
+Output: {"effects": [{"type": "damage", "target": {"kind": "target", "target_type": "any_target"}, "amount": 3}], "keywords": ["flying"], "triggered_abilities": [], "activated_abilities": []}
 """
 
 
