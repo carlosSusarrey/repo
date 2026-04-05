@@ -42,6 +42,10 @@ _EVENT_NAME_ALIASES = {
 class CardTransformer(Transformer):
     """Transforms parse tree into Card objects."""
 
+    def __init__(self, translate_fn=None):
+        super().__init__()
+        self._translate_fn = translate_fn
+
     def start(self, items):
         return list(items)
 
@@ -84,8 +88,11 @@ class CardTransformer(Transformer):
 
         # Auto-generate from rules text when no explicit effects/keywords defined
         if card.rules_text and not card.effects and not card.triggered_abilities and not card.activated_abilities and not card.keywords:
-            from mtg_engine.dsl.rules_parser import translate_rules_text
-            translated = translate_rules_text(card.rules_text)
+            translate_fn = self._translate_fn
+            if translate_fn is None:
+                from mtg_engine.dsl.rules_parser import translate_rules_text
+                translate_fn = translate_rules_text
+            translated = translate_fn(card.rules_text)
             if translated["effects"]:
                 card.effects = translated["effects"]
             if translated["keywords"]:
@@ -226,6 +233,7 @@ class CardTransformer(Transformer):
 
     def activated_prop(self, items):
         # Three forms: (mana, sacrifice, effect), (sacrifice, effect), (mana, effect)
+        # sacrifice_cost now returns a dict with types/exclude_types
         if len(items) == 3:
             # activate(mana, sacrifice(type)): effect
             mana_cost = items[0]
@@ -235,10 +243,8 @@ class CardTransformer(Transformer):
                 "cost": {"mana": str(mana_cost), "tap": True, "sacrifice": sac_type},
                 "effects": [effect] if not isinstance(effect, list) else effect,
             }}
-        elif len(items) == 2 and isinstance(items[0], str) and items[0] in (
-            "creature", "artifact", "enchantment", "permanent", "land",
-        ):
-            # activate(sacrifice(type)): effect
+        elif len(items) == 2 and isinstance(items[0], dict) and "types" in items[0]:
+            # activate(sacrifice(type)): effect — sacrifice_cost is a dict now
             sac_type = items[0]
             effect = items[1]
             return {"activated": {
@@ -255,7 +261,7 @@ class CardTransformer(Transformer):
             }}
 
     def sacrifice_cost(self, items):
-        return str(items[0]).strip()
+        return items[0]  # type_expr result: {"types": [...], "exclude_types": [...]}
 
     def loyalty_ability_prop(self, items):
         loyalty_cost = int(items[0])
@@ -304,8 +310,8 @@ class CardTransformer(Transformer):
         return {"action": "double_life"}
 
     def enchant_prop(self, items):
-        enchant_type = str(items[0]).strip()
-        return {"effect": {"type": "enchant", "target_type": enchant_type}}
+        type_info = items[0]  # type_expr result: {"types": [...], "exclude_types": [...]}
+        return {"effect": {"type": "enchant", **type_info}}
 
     def equip_prop(self, items):
         mana_cost = items[0]
@@ -472,48 +478,88 @@ class CardTransformer(Transformer):
     def copy_spell_retarget(self, items):
         return {"type": "copy_spell", "copy_target": str(items[0]).strip(), "new_targets": True}
 
+    # --- Type expression handlers ---
+
+    def type_expr(self, items):
+        """Build types/exclude_types from type atoms."""
+        types = []
+        exclude_types = []
+        for item in items:
+            if item["negated"]:
+                exclude_types.append(item["name"])
+            else:
+                types.append(item["name"])
+        result = {"types": types}
+        if exclude_types:
+            result["exclude_types"] = exclude_types
+        return result
+
+    def positive_type(self, items):
+        return {"name": str(items[0]).strip(), "negated": False}
+
+    def negated_type(self, items):
+        return {"name": str(items[0]).strip(), "negated": True}
+
+    # --- Target handlers ---
+
     def target_self(self, items):
         return {"kind": "self"}
 
     def target_each_opp(self, items):
         return {"kind": "each_opponent"}
 
+    def _build_target(self, kind, type_info, controller=None, state=None):
+        result = {"kind": kind, **type_info}
+        if controller is not None:
+            result["controller"] = str(controller)
+        if state is not None:
+            result["state"] = str(state)
+        return result
+
     def target_type_only(self, items):
-        return {"kind": "target", "target_type": str(items[0])}
+        return self._build_target("target", items[0])
 
     def target_type_ctrl(self, items):
-        return {"kind": "target", "target_type": str(items[0]), "controller": str(items[1])}
+        return self._build_target("target", items[0], controller=items[1])
 
     def target_type_state(self, items):
-        return {"kind": "target", "target_type": str(items[0]), "state": str(items[1])}
+        return self._build_target("target", items[0], state=items[1])
 
     def target_type_ctrl_state(self, items):
-        return {"kind": "target", "target_type": str(items[0]), "controller": str(items[1]), "state": str(items[2])}
+        return self._build_target("target", items[0], controller=items[1], state=items[2])
 
     def all_type_only(self, items):
-        return {"kind": "all", "target_type": str(items[0])}
+        return self._build_target("all", items[0])
 
     def all_type_ctrl(self, items):
-        return {"kind": "all", "target_type": str(items[0]), "controller": str(items[1])}
+        return self._build_target("all", items[0], controller=items[1])
 
     def all_type_state(self, items):
-        return {"kind": "all", "target_type": str(items[0]), "state": str(items[1])}
+        return self._build_target("all", items[0], state=items[1])
 
     def all_type_ctrl_state(self, items):
-        return {"kind": "all", "target_type": str(items[0]), "controller": str(items[1]), "state": str(items[2])}
+        return self._build_target("all", items[0], controller=items[1], state=items[2])
 
 
 _parser = Lark(CARD_GRAMMAR, parser="lalr")
-_transformer = CardTransformer()
+_default_transformer = CardTransformer()
 
 
-def parse_card(text: str) -> list[Card]:
-    """Parse card DSL text and return a list of Card objects."""
+def parse_card(text: str, translate_fn=None) -> list[Card]:
+    """Parse card DSL text and return a list of Card objects.
+
+    If translate_fn is provided, it will be used instead of the default
+    regex-based rules text translator for auto-generating effects from
+    the card's rules: field.
+    """
     tree = _parser.parse(text)
-    return _transformer.transform(tree)
+    if translate_fn is not None:
+        transformer = CardTransformer(translate_fn=translate_fn)
+        return transformer.transform(tree)
+    return _default_transformer.transform(tree)
 
 
-def parse_card_file(filepath: str) -> list[Card]:
+def parse_card_file(filepath: str, translate_fn=None) -> list[Card]:
     """Parse a .mtg card definition file."""
     with open(filepath) as f:
-        return parse_card(f.read())
+        return parse_card(f.read(), translate_fn=translate_fn)

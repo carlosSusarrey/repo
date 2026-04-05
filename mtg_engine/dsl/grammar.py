@@ -55,10 +55,9 @@ source_filter_list: SOURCE_FILTER+
 activated_prop: "activate(" mana_cost "," sacrifice_cost "):" effect
              | "activate(" sacrifice_cost "):" effect
              | "activate(" mana_cost "):" effect
-sacrifice_cost: "sacrifice(" SACRIFICE_TYPE ")"
-SACRIFICE_TYPE: "creature" | "artifact" | "enchantment" | "permanent" | "land"
+sacrifice_cost: "sacrifice(" type_expr ")"
 loyalty_ability_prop: "loyalty(" SIGNED_NUMBER "):" effect
-enchant_prop: "enchant:" ENCHANT_TYPE
+enchant_prop: "enchant:" type_expr
 equip_prop: "equip:" mana_cost
 chapter_prop: "chapter(" NUMBER "):" effect
 level_prop: "level(" NUMBER "," mana_cost "):" effect
@@ -134,24 +133,31 @@ copy_spell_effect: "copy_spell(" COPY_TARGET "," "new_targets" ")" -> copy_spell
                  | "copy_spell(" COPY_TARGET ")"                   -> copy_spell_same
 COPY_TARGET: "self" | "target_spell"
 
-target: "target(" TARGET_TYPE "," CONTROLLER_QUALIFIER "," STATE_QUALIFIER ")"  -> target_type_ctrl_state
-      | "target(" TARGET_TYPE "," CONTROLLER_QUALIFIER ")"                     -> target_type_ctrl
-      | "target(" TARGET_TYPE "," STATE_QUALIFIER ")"                          -> target_type_state
-      | "target(" TARGET_TYPE ")"                                              -> target_type_only
+target: "target(" type_expr "," CONTROLLER_QUALIFIER "," STATE_QUALIFIER ")"  -> target_type_ctrl_state
+      | "target(" type_expr "," CONTROLLER_QUALIFIER ")"                       -> target_type_ctrl
+      | "target(" type_expr "," STATE_QUALIFIER ")"                            -> target_type_state
+      | "target(" type_expr ")"                                                -> target_type_only
       | SELF_TARGET                                                            -> target_self
       | EACH_OPPONENT_TARGET                                                   -> target_each_opp
-      | "all(" TARGET_TYPE "," CONTROLLER_QUALIFIER "," STATE_QUALIFIER ")"    -> all_type_ctrl_state
-      | "all(" TARGET_TYPE "," CONTROLLER_QUALIFIER ")"                        -> all_type_ctrl
-      | "all(" TARGET_TYPE "," STATE_QUALIFIER ")"                             -> all_type_state
-      | "all(" TARGET_TYPE ")"                                                 -> all_type_only
+      | "all(" type_expr "," CONTROLLER_QUALIFIER "," STATE_QUALIFIER ")"      -> all_type_ctrl_state
+      | "all(" type_expr "," CONTROLLER_QUALIFIER ")"                          -> all_type_ctrl
+      | "all(" type_expr "," STATE_QUALIFIER ")"                               -> all_type_state
+      | "all(" type_expr ")"                                                   -> all_type_only
+
+// Type expressions: support union (|) and negation (!)
+// Examples: creature, permanent | !land, creature | planeswalker, spell | !creature
+type_expr: type_atom ("|" type_atom)*
+type_atom: "!" TYPE_ATOM_NAME  -> negated_type
+         | TYPE_ATOM_NAME      -> positive_type
 
 SELF_TARGET: "self"
 EACH_OPPONENT_TARGET: "each_opponent"
 
-TARGET_TYPE: "creature" | "player" | "any_target" | "artifact" | "enchantment" | "permanent" | "spell"
+TYPE_ATOM_NAME: "creature" | "player" | "any_target" | "artifact" | "enchantment"
+              | "permanent" | "spell" | "planeswalker" | "land" | "battle"
+              | "kindred" | "instant" | "sorcery" | "token" | "nontoken"
 CONTROLLER_QUALIFIER: "you" | "opponent"
 STATE_QUALIFIER: "attacking" | "blocking" | "blocked" | "unblocked" | "tapped" | "untapped"
-ENCHANT_TYPE: "creature" | "artifact" | "land" | "enchantment" | "permanent" | "player"
 MANA_COLOR: "W" | "U" | "B" | "R" | "G" | "C"
 
 CARD_NAME: "\"" /[^"]+/ "\""

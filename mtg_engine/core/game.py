@@ -1406,14 +1406,18 @@ class Game:
                 if cost.get("tap", False):
                     card.tapped = False
                 return False
-            # Validate type
-            type_match = (
-                sac_type == "permanent"
-                or (sac_type == "creature" and sac_card.card.is_creature)
-                or (sac_type == "artifact" and CardType.ARTIFACT in sac_card.card.card_types)
-                or (sac_type == "enchantment" and CardType.ENCHANTMENT in sac_card.card.card_types)
-                or (sac_type == "land" and CardType.LAND in sac_card.card.card_types)
-            )
+            # Validate type — sac_type is either a string (legacy) or a dict with types/exclude_types
+            from mtg_engine.core.filters import matches_card_type
+            if isinstance(sac_type, str):
+                type_match = matches_card_type(sac_card, [sac_type])
+            elif isinstance(sac_type, dict):
+                type_match = matches_card_type(
+                    sac_card,
+                    sac_type.get("types", ["permanent"]),
+                    sac_type.get("exclude_types"),
+                )
+            else:
+                type_match = True
             if not type_match:
                 if cost.get("tap", False):
                     card.tapped = False

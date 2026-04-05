@@ -6,7 +6,7 @@
   - `docs/GAP_ANALYSIS.md` — strike through completed items, update phase status
   - `README.md` — update "Implemented Mechanics" if the change adds a user-visible mechanic or major feature
 - **Track small tasks and future improvements**: Add discovered issues, tech debt, or small follow-ups to the "Future Improvements / Small Tasks" section below so they aren't lost between sessions.
-- **Tests**: Always run `python -m pytest` after changes. Current count: 741 tests.
+- **Tests**: Always run `python -m pytest` after changes. Current count: 769 tests.
 - **Commit style**: Imperative mood, explain "why" not "what". Include session link.
 
 ## Architecture
@@ -39,7 +39,7 @@
 - **Sacrifice as cost**: DSL `activate(sacrifice(creature)): effect` or `activate({2}, sacrifice(land)): effect`. Rules text "Sacrifice a creature: draw a card". `Game.activate_ability()` method handles cost payment (tap + sacrifice) before putting ability on stack. Validates type match.
 - **Conditional effects**: DSL `if_did(condition_effect, then_effect)` and rules text "If you do/did, [effect]". Condition is resolved first; then-effect fires only if condition succeeded and was not declined. Composes with `may` for "you may X. If you do, Y" patterns.
 - **Copy spell**: DSL `copy_spell(self)` or `copy_spell(target_spell, new_targets)`. Rules text "copy this spell", "copy target spell". `AbilityOnStack.copy()` creates independent duplicate on stack with inherited targets. Self-copy and target-copy supported. `new_targets` invokes `target_callback` on `Game.__init__` (default: keep original targets) to allow retargeting.
-- **Centralized filter vocabulary**: `filters.py` provides shared constants and matching logic for triggers, targets, and replacement effects. Controller qualifiers (`you`/`opponent`), state qualifiers (`attacking`/`blocking`/`tapped`/`untapped`), card type keywords, token status.
+- **Centralized filter vocabulary**: `filters.py` provides shared constants and matching logic for triggers, targets, and replacement effects. Controller qualifiers (`you`/`opponent`), state qualifiers (`attacking`/`blocking`/`tapped`/`untapped`), card type keywords, token status. `matches_card_type()` is the single source of truth for type matching with include/exclude support. `normalize_target()` converts old `target_type` format to new `types`/`exclude_types` format.
 - **Web UI**: Flask app with card DSL editor, live preview, engine translation panel, example library (12 categories), and card schema reference.
 
 ## Key Patterns
@@ -50,7 +50,7 @@
 - Saga lore advancement happens in `Game._advance_sagas()`, called from `step_draw()`
 - Cards define abilities declaratively via dicts in `effects`, `triggered_abilities`, `activated_abilities`, `chapter_abilities`
 - **DSL grammar**: Uses unified `GAME_EVENT` terminal — same event names work in both `when(event):` (triggers) and `replace(event):` (replacements). Old replacement names (`die`, `enter_battlefield`, `draw`, `life_gain`) are accepted and auto-normalized to trigger-style (`dies`, `enters_battlefield`, `draw_card`, `gain_life`).
-- **DSL target syntax**: `target(creature)`, `target(creature, opponent)`, `target(creature, attacking)`, `target(creature, opponent, attacking)`, `all(creature)`, `all(creature, attacking)`, `all(creature, opponent)`.
+- **DSL target syntax**: Targets support type unions (`|`) and negation (`!`). Examples: `target(creature)`, `target(permanent | !land)` (nonland permanent), `target(creature | planeswalker)`, `all(spell | !creature)` (noncreature spells), `target(creature, opponent)`, `all(creature | !token, opponent, attacking)`. Internal format uses `types`/`exclude_types` lists instead of single `target_type` string.
 
 ## Remaining Gaps (Phase 5+)
 See `docs/GAP_ANALYSIS.md` for full details. Key remaining items:

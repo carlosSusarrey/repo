@@ -35,7 +35,7 @@ def _make_aura(name="Rancor", enchant_type="creature", effects=None, owner=0):
         name=name,
         card_type=CardType.ENCHANTMENT,
         subtypes=["Aura"],
-        effects=effects or [{"type": "enchant", "target_type": enchant_type}],
+        effects=effects or [{"type": "enchant", "types": [enchant_type]}],
     )
     inst = CardInstance(card=card, zone=Zone.BATTLEFIELD, owner_index=owner, controller_index=owner)
     return inst

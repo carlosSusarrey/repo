@@ -378,7 +378,7 @@ class TestAuraAttachmentBypassesTargeting:
         aura_card = Card(
             name="Pacifism", card_type=CardType.ENCHANTMENT,
             cost=ManaCost.parse("{1}{W}"), subtypes=["Aura"],
-            effects=[{"type": "enchant", "target_type": "creature"}],
+            effects=[{"type": "enchant", "types": ["creature"]}],
         )
         aura = CardInstance(card=aura_card, zone=Zone.BATTLEFIELD, owner_index=0, controller_index=0)
         creature = CardInstance(
@@ -394,7 +394,7 @@ class TestAuraAttachmentBypassesTargeting:
         aura_card = Card(
             name="Pacifism", card_type=CardType.ENCHANTMENT,
             cost=ManaCost.parse("{1}{W}"), subtypes=["Aura"],
-            effects=[{"type": "enchant", "target_type": "creature"}],
+            effects=[{"type": "enchant", "types": ["creature"]}],
         )
         aura = CardInstance(card=aura_card, zone=Zone.BATTLEFIELD, owner_index=0, controller_index=0)
         creature = CardInstance(
@@ -415,7 +415,7 @@ class TestAuraAttachmentBypassesTargeting:
         aura_card = Card(
             name="Pacifism", card_type=CardType.ENCHANTMENT,
             cost=ManaCost.parse("{1}{W}"), subtypes=["Aura"],
-            effects=[{"type": "enchant", "target_type": "creature"}],
+            effects=[{"type": "enchant", "types": ["creature"]}],
         )
         aura = CardInstance(card=aura_card, zone=Zone.BATTLEFIELD, owner_index=0, controller_index=0)
         creature = CardInstance(

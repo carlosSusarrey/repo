@@ -116,7 +116,7 @@ class TestKicker:
             power=2,
             toughness=2,
             kicker_cost="{B}",
-            kicker_effects=[{"type": "sacrifice", "target_type": "creature"}],
+            kicker_effects=[{"type": "sacrifice", "target": {"kind": "target", "types": ["creature"]}}],
         )
         game = _make_game_with_cards([creature], [(Color.BLACK, 5)])
 

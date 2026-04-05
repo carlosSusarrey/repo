@@ -60,28 +60,31 @@ def can_enchant(aura: CardInstance, target: CardInstance) -> bool:
         return False
 
     # Check enchant restriction from subtypes/rules
-    enchant_type = _get_enchant_type(aura)
-    if enchant_type == "creature" and not target.card.is_creature:
-        return False
-    if enchant_type == "artifact" and target.card.card_type != CardType.ARTIFACT:
-        return False
-    if enchant_type == "land" and not target.card.is_land:
-        return False
-    if enchant_type == "enchantment" and target.card.card_type != CardType.ENCHANTMENT:
+    enchant_filter = _get_enchant_filter(aura)
+    from mtg_engine.core.filters import matches_card_type
+    if not matches_card_type(target, **enchant_filter):
         return False
 
     return True
 
 
-def _get_enchant_type(aura: CardInstance) -> str:
-    """Determine what an aura can enchant based on its definition."""
-    # Check effects for explicit enchant type
+def _get_enchant_filter(aura: CardInstance) -> dict:
+    """Determine what an aura can enchant based on its definition.
+
+    Returns a dict with 'types' and optionally 'exclude_types' keys,
+    suitable for passing to matches_card_type().
+    """
     for effect in aura.card.effects:
         if effect.get("type") == "enchant":
-            return effect.get("target_type", "permanent")
+            types = effect.get("types", ["permanent"])
+            exclude_types = effect.get("exclude_types")
+            result = {"types": types}
+            if exclude_types:
+                result["exclude_types"] = exclude_types
+            return result
 
     # Default: can enchant any permanent
-    return "permanent"
+    return {"types": ["permanent"]}
 
 
 def attach(source: CardInstance, target: CardInstance) -> bool:
@@ -188,8 +191,9 @@ def check_equipment_fall_off(
 
         # Target is no longer a legal object (e.g., stopped being a creature)
         elif card.card.card_type == CardType.ENCHANTMENT and "Aura" in card.card.subtypes:
-            enchant_type = _get_enchant_type(card)
-            if enchant_type == "creature" and not target.card.is_creature:
+            enchant_filter = _get_enchant_filter(card)
+            from mtg_engine.core.filters import matches_card_type
+            if not matches_card_type(target, **enchant_filter):
                 # Will be caught by SBA
                 pass
 

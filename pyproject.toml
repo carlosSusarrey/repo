@@ -10,6 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
     "flask>=3.0",
     "lark>=1.1",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]

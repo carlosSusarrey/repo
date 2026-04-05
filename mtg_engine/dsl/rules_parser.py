@@ -138,32 +138,51 @@ def _apply_qualifiers(effects: list[dict], qualifiers: dict[str, str | None]) ->
 # Target helpers
 # ---------------------------------------------------------------------------
 
-_TARGET_MAP: dict[str, dict[str, str]] = {
-    "any target": {"kind": "target", "target_type": "any_target"},
-    "target creature": {"kind": "target", "target_type": "creature"},
-    "target player": {"kind": "target", "target_type": "player"},
-    "target artifact": {"kind": "target", "target_type": "artifact"},
-    "target enchantment": {"kind": "target", "target_type": "enchantment"},
-    "target permanent": {"kind": "target", "target_type": "permanent"},
-    "target planeswalker": {"kind": "target", "target_type": "planeswalker"},
-    "target spell": {"kind": "target", "target_type": "spell"},
+_TARGET_MAP: dict[str, dict[str, Any]] = {
+    "any target": {"kind": "target", "types": ["any_target"]},
+    "target creature": {"kind": "target", "types": ["creature"]},
+    "target player": {"kind": "target", "types": ["player"]},
+    "target artifact": {"kind": "target", "types": ["artifact"]},
+    "target enchantment": {"kind": "target", "types": ["enchantment"]},
+    "target permanent": {"kind": "target", "types": ["permanent"]},
+    "target planeswalker": {"kind": "target", "types": ["planeswalker"]},
+    "target spell": {"kind": "target", "types": ["spell"]},
+    "target nonland permanent": {"kind": "target", "types": ["permanent"], "exclude_types": ["land"]},
+    "target noncreature permanent": {"kind": "target", "types": ["permanent"], "exclude_types": ["creature"]},
+    "target noncreature spell": {"kind": "target", "types": ["spell"], "exclude_types": ["creature"]},
+    "target creature or planeswalker": {"kind": "target", "types": ["creature", "planeswalker"]},
+    "target artifact or enchantment": {"kind": "target", "types": ["artifact", "enchantment"]},
+    "target nontoken creature": {"kind": "target", "types": ["creature"], "exclude_types": ["token"]},
     "each opponent": {"kind": "each_opponent"},
 }
 
 
-def _parse_target(text: str) -> dict[str, str]:
+def _parse_target(text: str) -> dict[str, Any]:
     """Parse a target phrase, stripping qualifiers to find the base target type."""
     base = _strip_qualifiers(text)
     qualifiers = _extract_qualifiers(text)
 
     if base in _TARGET_MAP:
         result = dict(_TARGET_MAP[base])
+        # Deep copy lists to avoid mutating the template
+        if "types" in result:
+            result["types"] = list(result["types"])
+        if "exclude_types" in result:
+            result["exclude_types"] = list(result["exclude_types"])
     else:
-        m = re.match(r"target\s+(\w+)", base)
-        if m:
-            result = {"kind": "target", "target_type": m.group(1)}
+        # Try compound patterns: "target nonX Y" or "target X or Y"
+        m_non = re.match(r"target\s+non(\w+)\s+(\w+)", base)
+        m_or = re.match(r"target\s+(\w+)\s+or\s+(\w+)", base)
+        m_simple = re.match(r"target\s+(\w+)", base)
+
+        if m_non:
+            result = {"kind": "target", "types": [m_non.group(2)], "exclude_types": [m_non.group(1)]}
+        elif m_or:
+            result = {"kind": "target", "types": [m_or.group(1), m_or.group(2)]}
+        elif m_simple:
+            result = {"kind": "target", "types": [m_simple.group(1)]}
         else:
-            result = {"kind": "target", "target_type": "any_target"}
+            result = {"kind": "target", "types": ["any_target"]}
 
     if qualifiers["controller"]:
         result["controller"] = qualifiers["controller"]
@@ -172,9 +191,9 @@ def _parse_target(text: str) -> dict[str, str]:
     return result
 
 
-def _target_for_type(card_type: str, kind: str = "target") -> dict[str, str]:
+def _target_for_type(card_type: str, kind: str = "target") -> dict[str, Any]:
     """Build a bare target dict — qualifiers are applied centrally by _apply_qualifiers."""
-    return {"kind": kind, "target_type": card_type}
+    return {"kind": kind, "types": [card_type]}
 
 
 # ---------------------------------------------------------------------------
@@ -339,7 +358,65 @@ _PERM_TYPES = r"(creature|artifact|enchantment|permanent|planeswalker)"
 _PERM_TYPES_PLURAL = r"(creatures?|artifacts?|enchantments?|permanents?|planeswalkers?)"
 _BOUNCE_TYPES_PLURAL = r"(creatures?|artifacts?|enchantments?|permanents?)"
 
+
+# --- Compound target handlers (nonX Y, X or Y) ---
+
+def _build_compound_target(m: re.Match) -> dict[str, Any]:
+    """Build a target dict from a compound type regex match.
+
+    Works with patterns that capture (type1, type2) for both:
+    - "nonX Y" patterns → types=[Y], exclude_types=[X]
+    - "X or Y" patterns → types=[X, Y]
+
+    Detects which variant by checking if the matched text contains "non".
+    """
+    full = m.group(0).lower()
+    g1, g2 = m.group(1).lower(), m.group(2).lower()
+
+    if re.search(r'\bnon\w+\b', full):
+        # "non" pattern: g1 is the excluded type, g2 is the include type
+        return {"kind": "target", "types": [g2], "exclude_types": [g1]}
+    else:
+        # "or" pattern: both are include types
+        return {"kind": "target", "types": [g1, g2]}
+
+
+def _parse_compound_destroy(m: re.Match) -> list[dict]:
+    return [{"type": "destroy", "target": _build_compound_target(m)}]
+
+def _parse_compound_exile(m: re.Match) -> list[dict]:
+    return [{"type": "exile", "target": _build_compound_target(m)}]
+
+def _parse_compound_bounce(m: re.Match) -> list[dict]:
+    return [{"type": "bounce", "target": _build_compound_target(m)}]
+
+def _parse_compound_counter(m: re.Match) -> list[dict]:
+    # Counter always targets spells, so the pattern is "counter target nonX spell"
+    full = m.group(0).lower()
+    excluded = m.group(1).lower()
+    return [{"type": "counter", "target": {"kind": "target", "types": ["spell"], "exclude_types": [excluded]}}]
+
+
 _EFFECT_PATTERNS: list[tuple[str, Any]] = [
+    # --- Compound target patterns (must come before simple ones) ---
+
+    # "destroy target X or Y" / "destroy target nonX Y"
+    (r"destroys?\s+target\s+(\w+)\s+or\s+(\w+)", _parse_compound_destroy),
+    (r"destroys?\s+target\s+non(\w+)\s+(\w+)", _parse_compound_destroy),
+
+    # "exile target X or Y" / "exile target nonX Y"
+    (r"exiles?\s+target\s+(\w+)\s+or\s+(\w+)", _parse_compound_exile),
+    (r"exiles?\s+target\s+non(\w+)\s+(\w+)", _parse_compound_exile),
+
+    # "return target nonX Y to hand" / "return target X or Y to hand"
+    (r"returns?\s+target\s+non(\w+)\s+(\w+)\s+to\s+its\s+owner'?s\s+hand", _parse_compound_bounce),
+    (r"returns?\s+target\s+(\w+)\s+or\s+(\w+)\s+to\s+its\s+owner'?s\s+hand", _parse_compound_bounce),
+
+    # "counter target noncreature spell"
+    (r"counters?\s+target\s+non(\w+)\s+spell", _parse_compound_counter),
+
+    # --- Simple target patterns ---
+
     # X damage
     (r"deals?\s+X\s+damage\s+to\s+(any target|target creature|target player|each opponent|target permanent|target planeswalker)",
      _parse_x_damage_effect),
@@ -562,7 +639,7 @@ def _try_parse_activated(sentence: str) -> dict | None:
     # "Sacrifice a/an [type]: effect"
     m = re.match(r"[Ss]acrifice\s+(?:a|an)\s+" + _SAC_TYPES + r"\s*:\s*(.*)", sentence)
     if m:
-        sac_type = m.group(1).lower()
+        sac_type = {"types": [m.group(1).lower()]}
         effects = _parse_effect_text(m.group(2))
         if effects:
             return {
@@ -579,7 +656,7 @@ def _try_parse_activated(sentence: str) -> dict | None:
         effects = _parse_effect_text(m.group(2))
         if effects:
             return {
-                "cost": {"mana": "{0}", "tap": True, "sacrifice": m.group(1).lower()},
+                "cost": {"mana": "{0}", "tap": True, "sacrifice": {"types": [m.group(1).lower()]}},
                 "effects": effects,
             }
 
@@ -592,7 +669,7 @@ def _try_parse_activated(sentence: str) -> dict | None:
         effects = _parse_effect_text(m.group(3))
         if effects:
             return {
-                "cost": {"mana": m.group(1), "sacrifice": m.group(2).lower()},
+                "cost": {"mana": m.group(1), "sacrifice": {"types": [m.group(2).lower()]}},
                 "effects": effects,
             }
 

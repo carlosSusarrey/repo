@@ -163,3 +163,229 @@ class TestDSLParser:
         serra = [c for c in cards if c.name == "Serra Angel"][0]
         assert Keyword.FLYING in serra.keywords
         assert Keyword.VIGILANCE in serra.keywords
+
+
+class TestTypeExpressions:
+    """Tests for the new type expression system with | (union) and ! (negation)."""
+
+    def test_simple_type(self):
+        cards = parse_card('''
+        card "Test" {
+            type: Instant
+            cost: {R}
+            effect: damage(target(creature), 3)
+        }
+        ''')
+        target = cards[0].effects[0]["target"]
+        assert target["kind"] == "target"
+        assert target["types"] == ["creature"]
+        assert "exclude_types" not in target
+
+    def test_negation_nonland_permanent(self):
+        cards = parse_card('''
+        card "Test" {
+            type: Instant
+            cost: {1}{U}
+            effect: bounce(target(permanent | !land))
+        }
+        ''')
+        target = cards[0].effects[0]["target"]
+        assert target["types"] == ["permanent"]
+        assert target["exclude_types"] == ["land"]
+
+    def test_union_creature_or_planeswalker(self):
+        cards = parse_card('''
+        card "Test" {
+            type: Sorcery
+            cost: {2}{B}
+            effect: destroy(target(creature | planeswalker))
+        }
+        ''')
+        target = cards[0].effects[0]["target"]
+        assert target["types"] == ["creature", "planeswalker"]
+        assert "exclude_types" not in target
+
+    def test_noncreature_spell(self):
+        cards = parse_card('''
+        card "Test" {
+            type: Instant
+            cost: {1}{U}
+            effect: counter(target(spell | !creature))
+        }
+        ''')
+        target = cards[0].effects[0]["target"]
+        assert target["types"] == ["spell"]
+        assert target["exclude_types"] == ["creature"]
+
+    def test_all_with_negation(self):
+        cards = parse_card('''
+        card "Test" {
+            type: Sorcery
+            cost: {4}{W}{W}
+            effect: exile(all(creature | !token))
+        }
+        ''')
+        target = cards[0].effects[0]["target"]
+        assert target["kind"] == "all"
+        assert target["types"] == ["creature"]
+        assert target["exclude_types"] == ["token"]
+
+    def test_negation_with_controller(self):
+        cards = parse_card('''
+        card "Test" {
+            type: Sorcery
+            cost: {2}{B}
+            effect: destroy(target(permanent | !land, opponent))
+        }
+        ''')
+        target = cards[0].effects[0]["target"]
+        assert target["types"] == ["permanent"]
+        assert target["exclude_types"] == ["land"]
+        assert target["controller"] == "opponent"
+
+    def test_union_with_state(self):
+        cards = parse_card('''
+        card "Test" {
+            type: Sorcery
+            cost: {2}{W}
+            effect: exile(all(creature | planeswalker, attacking))
+        }
+        ''')
+        target = cards[0].effects[0]["target"]
+        assert target["types"] == ["creature", "planeswalker"]
+        assert target["state"] == "attacking"
+
+    def test_sacrifice_cost_with_type_expr(self):
+        cards = parse_card('''
+        card "Test" {
+            type: Artifact
+            cost: {3}
+            activate({0}, sacrifice(permanent | !land)): draw(2)
+        }
+        ''')
+        cost = cards[0].activated_abilities[0]["cost"]
+        assert cost["sacrifice"]["types"] == ["permanent"]
+        assert cost["sacrifice"]["exclude_types"] == ["land"]
+
+    def test_enchant_type_expr(self):
+        cards = parse_card('''
+        card "Test" {
+            type: Enchantment
+            cost: {1}{U}
+            enchant: creature | planeswalker
+        }
+        ''')
+        enchant_effect = cards[0].effects[0]
+        assert enchant_effect["type"] == "enchant"
+        assert enchant_effect["types"] == ["creature", "planeswalker"]
+
+    def test_self_and_each_opponent_unchanged(self):
+        cards = parse_card('''
+        card "Test" {
+            type: Creature
+            cost: {B}
+            p/t: 1 / 1
+            when(dies): lose_life(each_opponent, 2); gain_life(2)
+        }
+        ''')
+        effects = cards[0].triggered_abilities[0]["effects"]
+        assert effects[0]["target"]["kind"] == "each_opponent"
+
+
+class TestMatchesCardType:
+    """Tests for the centralized matches_card_type function."""
+
+    def test_creature_matches_creature(self):
+        from mtg_engine.core.card import Card
+        from mtg_engine.core.filters import matches_card_type
+        card = Card(name="Bear", card_type=CardType.CREATURE)
+        assert matches_card_type(card, ["creature"]) is True
+
+    def test_creature_does_not_match_artifact(self):
+        from mtg_engine.core.card import Card
+        from mtg_engine.core.filters import matches_card_type
+        card = Card(name="Bear", card_type=CardType.CREATURE)
+        assert matches_card_type(card, ["artifact"]) is False
+
+    def test_permanent_matches_creature(self):
+        from mtg_engine.core.card import Card
+        from mtg_engine.core.filters import matches_card_type
+        card = Card(name="Bear", card_type=CardType.CREATURE)
+        assert matches_card_type(card, ["permanent"]) is True
+
+    def test_permanent_does_not_match_instant(self):
+        from mtg_engine.core.card import Card
+        from mtg_engine.core.filters import matches_card_type
+        card = Card(name="Bolt", card_type=CardType.INSTANT)
+        assert matches_card_type(card, ["permanent"]) is False
+
+    def test_nonland_permanent_matches_creature(self):
+        from mtg_engine.core.card import Card
+        from mtg_engine.core.filters import matches_card_type
+        card = Card(name="Bear", card_type=CardType.CREATURE)
+        assert matches_card_type(card, ["permanent"], ["land"]) is True
+
+    def test_nonland_permanent_rejects_land(self):
+        from mtg_engine.core.card import Card
+        from mtg_engine.core.filters import matches_card_type
+        card = Card(name="Forest", card_type=CardType.LAND)
+        assert matches_card_type(card, ["permanent"], ["land"]) is False
+
+    def test_union_creature_or_planeswalker(self):
+        from mtg_engine.core.card import Card
+        from mtg_engine.core.filters import matches_card_type
+        pw = Card(name="Jace", card_type=CardType.PLANESWALKER)
+        assert matches_card_type(pw, ["creature", "planeswalker"]) is True
+        artifact = Card(name="Sol Ring", card_type=CardType.ARTIFACT)
+        assert matches_card_type(artifact, ["creature", "planeswalker"]) is False
+
+    def test_noncreature_spell(self):
+        from mtg_engine.core.card import Card
+        from mtg_engine.core.filters import matches_card_type
+        instant = Card(name="Bolt", card_type=CardType.INSTANT)
+        assert matches_card_type(instant, ["spell"], ["creature"]) is True
+        creature = Card(name="Bear", card_type=CardType.CREATURE)
+        assert matches_card_type(creature, ["spell"], ["creature"]) is False
+
+    def test_any_target_matches_everything(self):
+        from mtg_engine.core.card import Card
+        from mtg_engine.core.filters import matches_card_type
+        card = Card(name="Bear", card_type=CardType.CREATURE)
+        assert matches_card_type(card, ["any_target"]) is True
+
+    def test_token_exclude(self):
+        from mtg_engine.core.card import Card, CardInstance
+        from mtg_engine.core.filters import matches_card_type
+        card = Card(name="Bear", card_type=CardType.CREATURE)
+        inst = CardInstance(card=card, is_token=True)
+        assert matches_card_type(inst, ["creature"], ["token"]) is False
+        inst2 = CardInstance(card=card, is_token=False)
+        assert matches_card_type(inst2, ["creature"], ["token"]) is True
+
+
+class TestNormalizeTarget:
+    """Tests for backward-compatible target normalization."""
+
+    def test_old_format_converted(self):
+        from mtg_engine.core.filters import normalize_target
+        old = {"kind": "target", "target_type": "creature"}
+        result = normalize_target(old)
+        assert result["types"] == ["creature"]
+        assert "target_type" not in result
+
+    def test_new_format_unchanged(self):
+        from mtg_engine.core.filters import normalize_target
+        new = {"kind": "target", "types": ["permanent"], "exclude_types": ["land"]}
+        result = normalize_target(new)
+        assert result["types"] == ["permanent"]
+        assert result["exclude_types"] == ["land"]
+
+    def test_self_unchanged(self):
+        from mtg_engine.core.filters import normalize_target
+        target = {"kind": "self"}
+        assert normalize_target(target) == {"kind": "self"}
+
+    def test_each_opponent_unchanged(self):
+        from mtg_engine.core.filters import normalize_target
+        target = {"kind": "each_opponent"}
+        assert normalize_target(target) == {"kind": "each_opponent"}

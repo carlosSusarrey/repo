@@ -75,7 +75,7 @@ class TestCounterEffect:
 
         counter_card = Card(name="Counterspell", card_type=CardType.INSTANT,
                             cost=ManaCost.parse("{U}{U}"),
-                            effects=[{"type": "counter", "target": {"kind": "target", "target_type": "spell"}}])
+                            effects=[{"type": "counter", "target": {"kind": "target", "types": ["spell"]}}])
         counter_instance = CardInstance(card=counter_card, zone=Zone.STACK,
                                         instance_id="counterspell", owner_index=0, controller_index=0)
         game.state.cards.append(counter_instance)
@@ -1157,7 +1157,7 @@ class TestCopySpellEffect:
         """copy_spell(self) puts a copy of the ability on the stack."""
         game = _setup_game()
         copy_effect = {"type": "copy_spell", "copy_target": "self", "new_targets": False}
-        damage_effect = {"type": "damage", "target": {"kind": "target", "target_type": "player"}, "amount": 3}
+        damage_effect = {"type": "damage", "target": {"kind": "target", "types": ["player"]}, "amount": 3}
 
         item = AbilityOnStack(
             source_id="bolt", controller_index=0,

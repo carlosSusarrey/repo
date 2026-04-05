@@ -39,14 +39,14 @@ class TestSimpleEffects:
         assert e["type"] == "damage"
         assert e["amount"] == 3
         assert e["target"]["kind"] == "target"
-        assert e["target"]["target_type"] == "any_target"
+        assert e["target"]["types"] == ["any_target"]
 
     def test_damage_target_creature(self):
         result = translate_rules_text("Deal 5 damage to target creature.")
         e = result["effects"][0]
         assert e["type"] == "damage"
         assert e["amount"] == 5
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
 
     def test_damage_each_opponent(self):
         result = translate_rules_text("Deal 2 damage to each opponent.")
@@ -87,25 +87,25 @@ class TestSimpleEffects:
         result = translate_rules_text("Destroy target creature.")
         e = result["effects"][0]
         assert e["type"] == "destroy"
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
 
     def test_exile_target_creature(self):
         result = translate_rules_text("Exile target creature.")
         e = result["effects"][0]
         assert e["type"] == "exile"
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
 
     def test_bounce(self):
         result = translate_rules_text("Return target creature to its owner's hand.")
         e = result["effects"][0]
         assert e["type"] == "bounce"
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
 
     def test_counter_spell(self):
         result = translate_rules_text("Counter target spell.")
         e = result["effects"][0]
         assert e["type"] == "counter"
-        assert e["target"]["target_type"] == "spell"
+        assert e["target"]["types"] == ["spell"]
 
     def test_pump(self):
         result = translate_rules_text("Target creature gets +3/+3 until end of turn.")
@@ -130,7 +130,7 @@ class TestSimpleEffects:
         result = translate_rules_text("Tap target creature.")
         e = result["effects"][0]
         assert e["type"] == "tap"
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
 
     def test_create_token(self):
         result = translate_rules_text("Create a 1/1 Soldier creature token.")
@@ -242,7 +242,7 @@ class TestIntegration:
         assert len(card.effects) == 1
         assert card.effects[0]["type"] == "damage"
         assert card.effects[0]["amount"] == 2
-        assert card.effects[0]["target"]["target_type"] == "any_target"
+        assert card.effects[0]["target"]["types"] == ["any_target"]
 
     def test_rules_only_creature_with_keywords(self):
         dsl = '''
@@ -398,7 +398,7 @@ class TestIntegration:
         cards = parse_card(dsl)
         card = cards[0]
         assert card.effects[0]["target"]["controller"] == "opponent"
-        assert card.effects[0]["target"]["target_type"] == "creature"
+        assert card.effects[0]["target"]["types"] == ["creature"]
 
 
 # ---- Controller qualifier tests ----
@@ -431,7 +431,7 @@ class TestControllerQualifiers:
         result = translate_rules_text("Deal 3 damage to target creature you don't control.")
         e = result["effects"][0]
         assert e["type"] == "damage"
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
         assert e["target"]["controller"] == "opponent"
 
     def test_destroy_you_dont_control(self):
@@ -481,7 +481,7 @@ class TestControllerQualifiers:
         card = cards[0]
         assert card.effects[0]["type"] == "destroy"
         assert card.effects[0]["target"]["controller"] == "opponent"
-        assert card.effects[0]["target"]["target_type"] == "creature"
+        assert card.effects[0]["target"]["types"] == ["creature"]
 
 
 # ---- State qualifier tests ----
@@ -491,14 +491,14 @@ class TestStateQualifiers:
         result = translate_rules_text("Destroy target attacking creature.")
         e = result["effects"][0]
         assert e["type"] == "destroy"
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
         assert e["target"]["state"] == "attacking"
 
     def test_exile_target_tapped_creature(self):
         result = translate_rules_text("Exile target tapped creature.")
         e = result["effects"][0]
         assert e["type"] == "exile"
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
         assert e["target"]["state"] == "tapped"
 
     def test_tap_target_untapped_creature(self):
@@ -543,14 +543,14 @@ class TestStateQualifiers:
         e = result["effects"][0]
         assert e["type"] == "damage"
         assert e["amount"] == 3
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
         assert e["target"]["state"] == "attacking"
 
     def test_damage_target_creature_opponent(self):
         result = translate_rules_text("Deal 2 damage to target creature an opponent controls.")
         e = result["effects"][0]
         assert e["type"] == "damage"
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
         assert e["target"]["controller"] == "opponent"
 
     def test_damage_target_tapped_creature_opponent(self):
@@ -558,7 +558,7 @@ class TestStateQualifiers:
         e = result["effects"][0]
         assert e["type"] == "damage"
         assert e["amount"] == 4
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
         assert e["target"]["state"] == "tapped"
         assert e["target"]["controller"] == "opponent"
 
@@ -571,14 +571,14 @@ class TestAllQuantifier:
         e = result["effects"][0]
         assert e["type"] == "destroy"
         assert e["target"]["kind"] == "all"
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
 
     def test_exile_all_attacking_creatures(self):
         result = translate_rules_text("Exile all attacking creatures.")
         e = result["effects"][0]
         assert e["type"] == "exile"
         assert e["target"]["kind"] == "all"
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
         assert e["target"]["state"] == "attacking"
 
     def test_destroy_all_artifacts(self):
@@ -586,28 +586,28 @@ class TestAllQuantifier:
         e = result["effects"][0]
         assert e["type"] == "destroy"
         assert e["target"]["kind"] == "all"
-        assert e["target"]["target_type"] == "artifact"
+        assert e["target"]["types"] == ["artifact"]
 
     def test_bounce_all_creatures(self):
         result = translate_rules_text("Return all creatures to their owners' hands.")
         e = result["effects"][0]
         assert e["type"] == "bounce"
         assert e["target"]["kind"] == "all"
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
 
     def test_tap_all_creatures(self):
         result = translate_rules_text("Tap all creatures.")
         e = result["effects"][0]
         assert e["type"] == "tap"
         assert e["target"]["kind"] == "all"
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
 
     def test_all_creatures_get_pump(self):
         result = translate_rules_text("All creatures get +1/+1 until end of turn.")
         e = result["effects"][0]
         assert e["type"] == "pump"
         assert e["target"]["kind"] == "all"
-        assert e["target"]["target_type"] == "creature"
+        assert e["target"]["types"] == ["creature"]
         assert e["power"] == 1
         assert e["toughness"] == 1
 
@@ -629,7 +629,7 @@ class TestAllQuantifier:
         cards = parse_card(dsl)
         card = cards[0]
         assert card.effects[0]["target"]["state"] == "attacking"
-        assert card.effects[0]["target"]["target_type"] == "creature"
+        assert card.effects[0]["target"]["types"] == ["creature"]
 
     def test_dsl_all_with_state_qualifier(self):
         dsl = '''
@@ -655,7 +655,7 @@ class TestAllQuantifier:
         cards = parse_card(dsl)
         card = cards[0]
         assert card.effects[0]["target"]["kind"] == "all"
-        assert card.effects[0]["target"]["target_type"] == "creature"
+        assert card.effects[0]["target"]["types"] == ["creature"]
 
 
 # ---- Loyalty ability detection (planeswalkers) ----
@@ -805,7 +805,7 @@ class TestSacrificeAsCost:
         result = translate_rules_text("Sacrifice a creature: draw a card")
         assert len(result["activated_abilities"]) == 1
         ab = result["activated_abilities"][0]
-        assert ab["cost"]["sacrifice"] == "creature"
+        assert ab["cost"]["sacrifice"] == {"types": ["creature"]}
         assert "mana" not in ab["cost"]
         assert any(e["type"] == "draw" for e in ab["effects"])
 
@@ -813,21 +813,21 @@ class TestSacrificeAsCost:
         result = translate_rules_text("Sacrifice a land: gain 1 life")
         assert len(result["activated_abilities"]) == 1
         ab = result["activated_abilities"][0]
-        assert ab["cost"]["sacrifice"] == "land"
+        assert ab["cost"]["sacrifice"] == {"types": ["land"]}
 
     def test_mana_plus_sacrifice(self):
         result = translate_rules_text("{2}, Sacrifice a creature: draw two cards")
         assert len(result["activated_abilities"]) == 1
         ab = result["activated_abilities"][0]
         assert ab["cost"]["mana"] == "{2}"
-        assert ab["cost"]["sacrifice"] == "creature"
+        assert ab["cost"]["sacrifice"] == {"types": ["creature"]}
 
     def test_tap_plus_sacrifice(self):
         result = translate_rules_text("{T}, Sacrifice a creature: draw a card")
         assert len(result["activated_abilities"]) == 1
         ab = result["activated_abilities"][0]
         assert ab["cost"].get("tap") is True
-        assert ab["cost"]["sacrifice"] == "creature"
+        assert ab["cost"]["sacrifice"] == {"types": ["creature"]}
 
     def test_dsl_sacrifice_cost(self):
         dsl = '''
@@ -841,7 +841,7 @@ class TestSacrificeAsCost:
         cards = parse_card(dsl)
         card = cards[0]
         assert len(card.activated_abilities) == 1
-        assert card.activated_abilities[0]["cost"]["sacrifice"] == "creature"
+        assert card.activated_abilities[0]["cost"]["sacrifice"] == {"types": ["creature"]}
 
     def test_dsl_mana_plus_sacrifice(self):
         dsl = '''
@@ -854,7 +854,7 @@ class TestSacrificeAsCost:
         cards = parse_card(dsl)
         card = cards[0]
         ab = card.activated_abilities[0]
-        assert ab["cost"]["sacrifice"] == "creature"
+        assert ab["cost"]["sacrifice"] == {"types": ["creature"]}
         assert "mana" in ab["cost"]
 
 
@@ -961,3 +961,33 @@ class TestCopySpell:
         assert card.effects[0]["type"] == "copy_spell"
         assert card.effects[0]["copy_target"] == "target_spell"
         assert card.effects[0]["new_targets"] is True
+
+
+class TestCompoundTargetTypes:
+    """Tests for compound target types in natural language rules text."""
+
+    def test_nonland_permanent(self):
+        result = translate_rules_text("Return target nonland permanent to its owner's hand.")
+        e = result["effects"][0]
+        assert e["type"] == "bounce"
+        assert e["target"]["types"] == ["permanent"]
+        assert e["target"]["exclude_types"] == ["land"]
+
+    def test_noncreature_spell(self):
+        result = translate_rules_text("Counter target noncreature spell.")
+        e = result["effects"][0]
+        assert e["type"] == "counter"
+        assert e["target"]["types"] == ["spell"]
+        assert e["target"]["exclude_types"] == ["creature"]
+
+    def test_creature_or_planeswalker(self):
+        result = translate_rules_text("Destroy target creature or planeswalker.")
+        e = result["effects"][0]
+        assert e["type"] == "destroy"
+        assert e["target"]["types"] == ["creature", "planeswalker"]
+
+    def test_artifact_or_enchantment(self):
+        result = translate_rules_text("Destroy target artifact or enchantment.")
+        e = result["effects"][0]
+        assert e["type"] == "destroy"
+        assert e["target"]["types"] == ["artifact", "enchantment"]

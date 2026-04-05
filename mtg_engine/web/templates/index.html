@@ -12,6 +12,27 @@
         <p>Design and test custom Magic: The Gathering cards</p>
     </header>
 
+    <!-- AI Card Generator -->
+    <section class="generate-section">
+        <div class="generate-panel">
+            <h2>AI Card Generator</h2>
+            <div class="generate-input-row">
+                <textarea id="generate-input" class="generate-textarea" placeholder="Describe a card in plain English, e.g.: a 3/3 red dragon with flying that deals 2 damage when it enters the battlefield, costs 3RR"></textarea>
+                <div class="generate-controls">
+                    <div class="generate-model-row">
+                        <label for="generate-model">Model:</label>
+                        <select id="generate-model" class="model-select">
+                            <option value="mistral:latest">mistral (fast)</option>
+                        </select>
+                        <span id="ai-status" class="ai-status" title="Checking Ollama..."></span>
+                    </div>
+                    <button id="btn-generate" onclick="generateCard()">Generate Card</button>
+                </div>
+            </div>
+            <div id="generate-status" class="status"></div>
+        </div>
+    </section>
+
     <main>
         <section class="editor-panel">
             <h2>Card DSL Editor</h2>
@@ -20,9 +41,28 @@
     cost: {R}
     rules: "Deal 3 damage to any target."
 }'></textarea>
+            <div class="parser-controls">
+                <div class="parser-mode">
+                    <label class="mode-label">
+                        <input type="radio" name="parser-mode" value="regex" checked onchange="onModeChange()">
+                        Regex
+                    </label>
+                    <label class="mode-label">
+                        <input type="radio" name="parser-mode" value="ai" onchange="onModeChange()">
+                        AI
+                    </label>
+                </div>
+                <div id="model-select-wrap" class="model-select-wrap" style="display:none">
+                    <label for="model-select">Model:</label>
+                    <select id="model-select" class="model-select">
+                        <option value="mistral:latest">mistral (fast)</option>
+                    </select>
+                </div>
+            </div>
             <div class="button-row">
                 <button id="btn-parse" onclick="parseCards()">Parse Cards</button>
                 <button id="btn-validate" onclick="validateCards()">Validate</button>
+                <button id="btn-ai-parse" onclick="aiParseRules()" style="display:none">AI Parse Rules Text</button>
             </div>
             <div id="status" class="status"></div>
         </section>
@@ -270,24 +310,174 @@
             return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         }
 
+        // ---- AI mode state ----
+        let aiAvailable = false;
+
+        function getParserMode() {
+            return document.querySelector('input[name="parser-mode"]:checked').value;
+        }
+
+        function onModeChange() {
+            const mode = getParserMode();
+            document.getElementById('model-select-wrap').style.display = mode === 'ai' ? '' : 'none';
+            document.getElementById('btn-ai-parse').style.display = mode === 'ai' ? '' : 'none';
+        }
+
+        async function loadModels() {
+            const dot = document.getElementById('ai-status');
+            try {
+                const resp = await fetch('api/ai-models');
+                const data = await resp.json();
+                if (data.available && data.models.length > 0) {
+                    aiAvailable = true;
+                    dot.className = 'ai-status ai-online';
+                    dot.title = 'Ollama connected';
+                    const optionsHtml = data.models.map(m => {
+                        const sizeMB = Math.round(m.size / 1e9 * 10) / 10;
+                        const label = `${m.name} (${sizeMB}GB)`;
+                        return `<option value="${m.name}">${label}</option>`;
+                    }).join('');
+                    document.getElementById('model-select').innerHTML = optionsHtml;
+                    document.getElementById('generate-model').innerHTML = optionsHtml;
+                    document.getElementById('btn-generate').disabled = false;
+                } else {
+                    dot.className = 'ai-status ai-offline';
+                    dot.title = 'Ollama unavailable';
+                    document.getElementById('btn-generate').disabled = true;
+                }
+            } catch {
+                dot.className = 'ai-status ai-offline';
+                dot.title = 'Ollama unavailable';
+                document.getElementById('btn-generate').disabled = true;
+            }
+        }
+
+        async function generateCard() {
+            const description = document.getElementById('generate-input').value.trim();
+            const status = document.getElementById('generate-status');
+            const model = document.getElementById('generate-model').value;
+
+            if (!description) {
+                status.textContent = 'Please enter a card description.';
+                status.className = 'status error';
+                return;
+            }
+
+            status.textContent = `Generating with ${model}... (this may take a moment)`;
+            status.className = 'status loading';
+            document.getElementById('btn-generate').disabled = true;
+
+            try {
+                const resp = await fetch('api/ai-generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({description, model})
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    // Put generated DSL into the editor
+                    document.getElementById('dsl-editor').value = data.dsl;
+
+                    if (data.valid) {
+                        status.textContent = `Generated valid card DSL [${model}]`;
+                        status.className = 'status success';
+                        // Auto-parse to show preview
+                        parseCards();
+                    } else {
+                        status.textContent = `Generated DSL (parse warning: ${data.parse_error}) [${model}]`;
+                        status.className = 'status error';
+                    }
+                } else {
+                    status.textContent = `Generation failed: ${data.error}`;
+                    status.className = 'status error';
+                }
+            } catch (e) {
+                status.textContent = `Request failed: ${e.message}`;
+                status.className = 'status error';
+            } finally {
+                document.getElementById('btn-generate').disabled = false;
+            }
+        }
+
         // ---- Parse / Validate ----
         async function parseCards() {
             const dsl = document.getElementById('dsl-editor').value;
             const status = document.getElementById('status');
             const preview = document.getElementById('card-preview');
+            const mode = getParserMode();
+            const useLlm = mode === 'ai' && aiAvailable;
+
+            const body = {dsl};
+            if (useLlm) {
+                body.use_llm = true;
+                body.llm_model = document.getElementById('model-select').value;
+                status.textContent = 'Parsing with AI... (this may take a moment)';
+                status.className = 'status loading';
+            }
 
             try {
-                const resp = await fetch('/api/parse', {
+                const resp = await fetch('api/parse', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({dsl})
+                    body: JSON.stringify(body)
                 });
                 const data = await resp.json();
 
                 if (data.success) {
-                    status.textContent = `Parsed ${data.cards.length} card(s) successfully.`;
+                    const src = useLlm ? ` [AI: ${body.llm_model}]` : '';
+                    status.textContent = `Parsed ${data.cards.length} card(s) successfully.${src}`;
                     status.className = 'status success';
                     preview.innerHTML = data.cards.map(renderCard).join('');
+                } else {
+                    status.textContent = `Error: ${data.error}`;
+                    status.className = 'status error';
+                }
+            } catch (e) {
+                status.textContent = `Request failed: ${e.message}`;
+                status.className = 'status error';
+            }
+        }
+
+        async function aiParseRules() {
+            const text = document.getElementById('dsl-editor').value;
+            const status = document.getElementById('status');
+            const preview = document.getElementById('card-preview');
+            const model = document.getElementById('model-select').value;
+
+            status.textContent = `AI parsing with ${model}...`;
+            status.className = 'status loading';
+
+            try {
+                const resp = await fetch('api/ai-parse', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({rules_text: text, model})
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    const src = data.source === 'regex_fallback' ? ' [fallback: regex]' : ` [AI: ${data.model}]`;
+                    status.textContent = `Parsed rules text successfully.${src}`;
+                    status.className = 'status success';
+
+                    // Render as a pseudo-card with just translations
+                    let html = '<div class="card">';
+                    html += '<div class="card-header"><span class="card-name">AI Rules Parse</span>';
+                    html += `<span class="card-cost ai-badge">${data.model}</span></div>`;
+                    html += `<div class="card-rules">${escapeHtml(text)}</div>`;
+                    if (data.translations && data.translations.length) {
+                        html += '<div class="translation-panel">';
+                        html += '<div class="translation-header">Engine Translation</div>';
+                        data.translations.forEach(t => {
+                            const label = {keyword:'KEYWORD',effect:'EFFECT',trigger:'TRIGGER',activated:'ACTIVATED'}[t.category] || t.category.toUpperCase();
+                            const cls = {keyword:'tag-keyword',effect:'tag-effect',trigger:'tag-trigger',activated:'tag-activated'}[t.category] || 'tag-effect';
+                            html += `<div class="translation-row"><span class="translation-tag ${cls}">${label}</span><code class="translation-dsl">${t.dsl}</code></div>`;
+                        });
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                    preview.innerHTML = html;
                 } else {
                     status.textContent = `Error: ${data.error}`;
                     status.className = 'status error';
@@ -303,7 +493,7 @@
             const status = document.getElementById('status');
 
             try {
-                const resp = await fetch('/api/validate', {
+                const resp = await fetch('api/validate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({dsl})
@@ -379,8 +569,9 @@
             return html;
         }
 
-        // Initialize library on load
+        // Initialize on load
         renderLibrary();
+        loadModels();
     </script>
 </body>
 </html>
