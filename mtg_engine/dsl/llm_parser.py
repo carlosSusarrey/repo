@@ -832,3 +832,162 @@ def generate_card_dsl(
         raise LLMParseError(f"Ollama request failed: {e}") from e
     except (KeyError, ValueError) as e:
         raise LLMParseError(f"Unexpected Ollama response: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# Full card text → structured Card dict
+# ---------------------------------------------------------------------------
+
+import re as _re_module
+
+
+def parse_card_text(
+    card_text: str,
+    model: str = "mistral:latest",
+    ollama_base_url: str | None = None,
+    timeout: float = 120.0,
+) -> dict:
+    """Parse a full MTG card text dump into a structured card dict.
+
+    Accepts text like:
+        Chain of Vapor
+        {U}
+        Instant
+        Return target nonland permanent to its owner's hand. ...
+
+    Extracts card metadata (name, cost, type, p/t, subtypes) with simple
+    parsing and uses the LLM to parse the rules text into structured effects.
+
+    Returns a dict with: name, card_type, cost, rules_text, subtypes,
+    power, toughness, loyalty, supertypes, effects, keywords,
+    triggered_abilities, activated_abilities, _source, _model.
+    """
+    lines = [l.strip() for l in card_text.strip().splitlines() if l.strip()]
+    if not lines:
+        raise LLMParseError("Empty card text")
+
+    # --- Extract card metadata from lines ---
+    name = None
+    cost = None
+    card_type_line = None
+    pt_line = None
+    loyalty = None
+    rules_lines = []
+
+    _CARD_TYPES = {
+        "creature", "instant", "sorcery", "enchantment", "artifact",
+        "planeswalker", "land", "battle", "kindred",
+    }
+    _SUPERTYPES = {"legendary", "basic", "snow"}
+    _MANA_RE = _re_module.compile(r'^\{[WUBRGCXSP0-9/]+\}(\{[WUBRGCXSP0-9/]+\})*$')
+    _PT_RE = _re_module.compile(r'^(\d+|\*)\s*/\s*(\d+|\*)$')
+
+    metadata_done = False
+    for line in lines:
+        if not metadata_done:
+            # Try to identify metadata lines
+            if name is None and not _MANA_RE.match(line):
+                # First non-mana line is the name
+                # But check if it's a type line
+                words_lower = [w.lower().rstrip(",") for w in line.split()]
+                if any(w in _CARD_TYPES for w in words_lower):
+                    # It's a type line, name was probably the previous assignment
+                    card_type_line = line
+                    if name is None:
+                        name = "Unknown"
+                else:
+                    name = line
+                continue
+            elif cost is None and _MANA_RE.match(line):
+                cost = line
+                continue
+            elif card_type_line is None:
+                words_lower = [w.lower().rstrip(",") for w in line.split()]
+                if any(w in _CARD_TYPES for w in words_lower):
+                    card_type_line = line
+                    continue
+                # Check for P/T
+                pt_match = _PT_RE.match(line)
+                if pt_match:
+                    pt_line = line
+                    metadata_done = True
+                    continue
+            elif pt_line is None:
+                pt_match = _PT_RE.match(line)
+                if pt_match:
+                    pt_line = line
+                    metadata_done = True
+                    continue
+                # Check for loyalty
+                if _re_module.match(r'^\d+$', line) and card_type_line and 'planeswalker' in card_type_line.lower():
+                    loyalty = int(line)
+                    metadata_done = True
+                    continue
+                # Must be start of rules text
+                metadata_done = True
+                rules_lines.append(line)
+                continue
+        rules_lines.append(line)
+
+    rules_text = " ".join(rules_lines).strip()
+
+    # --- Parse type line ---
+    supertypes = []
+    subtypes = []
+    card_type = "Instant"
+
+    if card_type_line:
+        # Split on em-dash or hyphen for subtypes
+        parts = _re_module.split(r'\s*[—\-]\s*', card_type_line, maxsplit=1)
+        type_words = parts[0].split()
+        if len(parts) > 1:
+            subtypes = parts[1].strip().split()
+
+        for word in type_words:
+            wl = word.lower().rstrip(",")
+            if wl in _SUPERTYPES:
+                supertypes.append(word)
+            elif wl in _CARD_TYPES:
+                card_type = word
+
+    # --- Parse P/T ---
+    power = None
+    toughness = None
+    if pt_line:
+        pt_match = _PT_RE.match(pt_line)
+        if pt_match:
+            p, t = pt_match.group(1), pt_match.group(2)
+            power = int(p) if p != '*' else 0
+            toughness = int(t) if t != '*' else 0
+
+    # --- Parse rules text with LLM ---
+    parsed_rules = {"effects": [], "keywords": set(),
+                    "triggered_abilities": [], "activated_abilities": []}
+    source = "none"
+    model_used = model
+
+    if rules_text:
+        parsed_rules = translate_rules_text_llm(
+            rules_text, model=model,
+            ollama_base_url=ollama_base_url, timeout=timeout,
+        )
+        source = parsed_rules.pop("_source", "llm")
+        model_used = parsed_rules.pop("_model", model)
+
+    return {
+        "name": name or "Unknown",
+        "card_type": card_type,
+        "cost": cost or "",
+        "supertypes": supertypes,
+        "subtypes": subtypes,
+        "power": power,
+        "toughness": toughness,
+        "loyalty": loyalty,
+        "rules_text": rules_text,
+        "effects": parsed_rules.get("effects", []),
+        "keywords": [kw.name.lower() for kw in parsed_rules.get("keywords", set())],
+        "triggered_abilities": parsed_rules.get("triggered_abilities", []),
+        "activated_abilities": parsed_rules.get("activated_abilities", []),
+        "_source": source,
+        "_model": model_used,
+    }

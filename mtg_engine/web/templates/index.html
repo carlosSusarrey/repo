@@ -12,12 +12,16 @@
         <p>Design and test custom Magic: The Gathering cards</p>
     </header>
 
-    <!-- AI Card Generator -->
+    <!-- AI Card Parser -->
     <section class="generate-section">
         <div class="generate-panel">
-            <h2>AI Card Generator</h2>
+            <h2>AI Card Parser</h2>
             <div class="generate-input-row">
-                <textarea id="generate-input" class="generate-textarea" placeholder="Describe a card in plain English, e.g.: a 3/3 red dragon with flying that deals 2 damage when it enters the battlefield, costs 3RR"></textarea>
+                <textarea id="generate-input" class="generate-textarea" placeholder="Paste a full card text, e.g.:
+Chain of Vapor
+{U}
+Instant
+Return target nonland permanent to its owner's hand. Then that permanent's controller may sacrifice a land. If the player does, they may copy this spell and may choose a new target for that copy."></textarea>
                 <div class="generate-controls">
                     <div class="generate-model-row">
                         <label for="generate-model">Model:</label>
@@ -26,10 +30,11 @@
                         </select>
                         <span id="ai-status" class="ai-status" title="Checking Ollama..."></span>
                     </div>
-                    <button id="btn-generate" onclick="generateCard()">Generate Card</button>
+                    <button id="btn-parse-card" onclick="parseCardText()">Parse Card</button>
                 </div>
             </div>
             <div id="generate-status" class="status"></div>
+            <div id="ai-parse-preview"></div>
         </div>
     </section>
 
@@ -349,6 +354,76 @@
                 dot.className = 'ai-status ai-offline';
                 dot.title = 'Ollama unavailable';
                 document.getElementById('btn-generate').disabled = true;
+            }
+        }
+
+        async function parseCardText() {
+            const text = document.getElementById('generate-input').value.trim();
+            const status = document.getElementById('generate-status');
+            const preview = document.getElementById('ai-parse-preview');
+            const model = document.getElementById('generate-model').value;
+
+            if (!text) {
+                status.textContent = 'Please paste card text to parse.';
+                status.className = 'status error';
+                return;
+            }
+
+            status.textContent = `Parsing card with ${model}...`;
+            status.className = 'status loading';
+            document.getElementById('btn-parse-card').disabled = true;
+
+            try {
+                const resp = await fetch('api/ai-card', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({card_text: text, model})
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    const card = data.card;
+                    const src = card.source === 'regex_fallback' ? ' [fallback: regex]' : ` [${card.model}]`;
+                    status.textContent = `Parsed "${card.name}" successfully.${src}`;
+                    status.className = 'status success';
+
+                    let html = '<div class="card">';
+                    html += `<div class="card-header"><span class="card-name">${escapeHtml(card.name)}</span>`;
+                    html += `<span class="card-cost">${escapeHtml(card.cost)}</span></div>`;
+                    html += `<div class="card-type">${escapeHtml(card.card_type)}`;
+                    if (card.supertypes && card.supertypes.length) html += ` (${card.supertypes.join(' ')})`;
+                    if (card.subtypes && card.subtypes.length) html += ` &mdash; ${card.subtypes.join(' ')}`;
+                    html += `</div>`;
+                    if (card.rules_text) html += `<div class="card-rules">${escapeHtml(card.rules_text)}</div>`;
+                    if (card.power !== null && card.power !== undefined) html += `<div class="card-pt">${card.power}/${card.toughness}</div>`;
+                    if (card.loyalty !== null && card.loyalty !== undefined) html += `<div class="card-pt">Loyalty: ${card.loyalty}</div>`;
+
+                    if (card.translations && card.translations.length) {
+                        html += '<div class="translation-panel">';
+                        html += '<div class="translation-header">Engine Translation</div>';
+                        card.translations.forEach(t => {
+                            const label = {keyword:'KEYWORD',effect:'EFFECT',trigger:'TRIGGER',activated:'ACTIVATED'}[t.category] || t.category.toUpperCase();
+                            const cls = {keyword:'tag-keyword',effect:'tag-effect',trigger:'tag-trigger',activated:'tag-activated'}[t.category] || 'tag-effect';
+                            html += `<div class="translation-row"><span class="translation-tag ${cls}">${label}</span><code class="translation-dsl">${t.dsl}</code></div>`;
+                        });
+                        html += '</div>';
+                    } else {
+                        html += '<div class="translation-panel"><div class="translation-header">Engine Translation</div>';
+                        html += '<div class="translation-empty">No translatable effects found.</div></div>';
+                    }
+                    html += '</div>';
+                    preview.innerHTML = html;
+                } else {
+                    status.textContent = `Error: ${data.error}`;
+                    status.className = 'status error';
+                    preview.innerHTML = '';
+                }
+            } catch (e) {
+                status.textContent = `Request failed: ${e.message}`;
+                status.className = 'status error';
+                preview.innerHTML = '';
+            } finally {
+                document.getElementById('btn-parse-card').disabled = false;
             }
         }
 

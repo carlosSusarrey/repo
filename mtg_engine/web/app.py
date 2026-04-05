@@ -11,7 +11,7 @@ from werkzeug.exceptions import NotFound
 from functools import partial
 
 from mtg_engine.dsl import parse_card
-from mtg_engine.dsl.llm_parser import translate_rules_text_llm, get_available_models, generate_card_dsl, LLMParseError
+from mtg_engine.dsl.llm_parser import translate_rules_text_llm, get_available_models, generate_card_dsl, parse_card_text, LLMParseError
 
 
 app = Flask(__name__)
@@ -279,6 +279,52 @@ def api_ai_generate():
             "parse_error": parse_error,
             "cards": cards,
         })
+    except LLMParseError as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/ai-card", methods=["POST"])
+def api_ai_card():
+    """Parse a full card text dump into a structured engine-ready card."""
+    data = request.get_json()
+    card_text = data.get("card_text", "")
+    model = data.get("model", "mistral:latest")
+
+    if not card_text.strip():
+        return jsonify({"success": False, "error": "No card text provided"}), 400
+
+    try:
+        card = parse_card_text(card_text, model=model)
+        source = card.pop("_source", "llm")
+        model_used = card.pop("_model", model)
+
+        # Build translation strings for display
+        translations = []
+        for kw in sorted(card.get("keywords", [])):
+            translations.append({"category": "keyword", "dsl": f"keywords: {kw}"})
+        for effect in card.get("effects", []):
+            translations.append({"category": "effect", "dsl": f"effect: {_effect_to_dsl(effect)}"})
+        for trig in card.get("triggered_abilities", []):
+            effects_dsl = "; ".join(_effect_to_dsl(e) for e in trig.get("effects", []))
+            translations.append({"category": "trigger", "dsl": f"when({trig.get('trigger')}): {effects_dsl}"})
+        for act in card.get("activated_abilities", []):
+            cost = act.get("cost", {})
+            cost_str = cost.get("mana", "{0}")
+            if cost.get("tap"):
+                cost_str = f"{cost_str}, {{T}}" if cost_str != "{0}" else "{T}"
+            if cost.get("is_loyalty"):
+                lc = cost.get("loyalty_cost", 0)
+                cost_str = f"{'+' if lc > 0 else ''}{lc}"
+            effects_dsl = "; ".join(_effect_to_dsl(e) for e in act.get("effects", []))
+            translations.append({"category": "activated", "dsl": f"activate({cost_str}): {effects_dsl}"})
+
+        card["translations"] = translations
+        card["source"] = source
+        card["model"] = model_used
+
+        return jsonify({"success": True, "card": card})
     except LLMParseError as e:
         return jsonify({"success": False, "error": str(e)}), 500
     except Exception as e:
