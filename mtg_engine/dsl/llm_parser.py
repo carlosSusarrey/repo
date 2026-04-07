@@ -281,6 +281,28 @@ Output: {"effects":[],"keywords":[],"triggered_abilities":[],"activated_abilitie
 
 Input: "Destroy target creature or planeswalker."
 Output: {"effects":[{"type":"destroy","target":{"kind":"target","types":["creature","planeswalker"]}}],"keywords":[],"triggered_abilities":[],"activated_abilities":[]}
+
+## Web-pasted full card text
+
+Users frequently paste full card text copied from the web or card databases. You may \
+receive the complete card dump rather than just rules text. When this happens, extract \
+ONLY the rules/abilities portion and parse it. Ignore the card name, mana cost, type \
+line, and P/T — those are handled separately.
+
+Input: "Dauthi Voidwalker\\n{B}{B}\\nCreature — Dauthi Rogue\\n\\nShadow (This creature can block or be blocked by only creatures with shadow.)\\n\\nIf a card would be put into an opponent's graveyard from anywhere, instead exile it with a void counter on it.\\n\\n{T}, Sacrifice this creature: Choose an exiled card an opponent owns with a void counter on it. You may play it this turn without paying its mana cost.\\n\\n3/2"
+Output: {"effects":[],"keywords":["shadow"],"triggered_abilities":[],"activated_abilities":[{"cost":{"tap":true,"sacrifice":{"types":["creature"]}},"effects":[]}]}
+
+Input: "Thalia, Guardian of Thraben\\n{1}{W}\\nLegendary Creature — Human Soldier\\n\\nFirst strike\\n\\nNoncreature spells cost {1} more to cast.\\n\\n2/1"
+Output: {"effects":[],"keywords":["first_strike"],"triggered_abilities":[],"activated_abilities":[]}
+
+Input: "Ledger Shredder\\n{1}{U}\\nCreature — Bird Advisor\\n\\nFlying\\n\\nWhenever a player casts their second spell each turn, Ledger Shredder connives.\\n\\n1/3"
+Output: {"effects":[],"keywords":["flying"],"triggered_abilities":[{"trigger":"cast","source":{"relation":"any"},"effects":[{"type":"draw","amount":1}]}],"activated_abilities":[]}
+
+Input: "Sheoldred, the Apocalypse\\n{2}{B}{B}\\nLegendary Creature — Phyrexian Praetor\\n\\nDeathtouch\\n\\nWhenever you draw a card, you gain 2 life.\\n\\nWhenever an opponent draws a card, that player loses 2 life.\\n\\n4/5"
+Output: {"effects":[],"keywords":["deathtouch"],"triggered_abilities":[{"trigger":"draw_card","source":{"relation":"you"},"effects":[{"type":"gain_life","amount":2}]},{"trigger":"draw_card","source":{"relation":"any"},"effects":[{"type":"lose_life","target":{"kind":"each_opponent"},"amount":2}]}],"activated_abilities":[]}
+
+Input: "Counterspell\\n{U}{U}\\nInstant\\n\\nCounter target spell."
+Output: {"effects":[{"type":"counter","target":{"kind":"target","types":["spell"]}}],"keywords":[],"triggered_abilities":[],"activated_abilities":[]}
 """
 
 
@@ -686,6 +708,47 @@ card "Phyrexian Arena" {
     when(begin_upkeep): draw(1)
     rules: "At the beginning of your upkeep, draw a card."
 }
+
+## Web-pasted full card text
+
+Users may paste full card text copied from the web instead of a natural language description. \
+When you receive a full card dump (with name, mana cost, type line, rules text, and P/T), \
+convert it into the DSL format just like any other input.
+
+Input: "Sheoldred, the Apocalypse\n{2}{B}{B}\nLegendary Creature — Phyrexian Praetor\n\nDeathtouch\n\nWhenever you draw a card, you gain 2 life.\n\nWhenever an opponent draws a card, that player loses 2 life.\n\n4/5"
+Output:
+card "Sheoldred, the Apocalypse" {
+    type: Creature
+    cost: {2}{B}{B}
+    supertype: Legendary
+    subtype: Phyrexian Praetor
+    p/t: 4 / 5
+    keywords: deathtouch
+    when(draw_card, you): gain_life(2)
+    when(draw_card, any): lose_life(each_opponent, 2)
+    rules: "Deathtouch. Whenever you draw a card, you gain 2 life. Whenever an opponent draws a card, that player loses 2 life."
+}
+
+Input: "Dauthi Voidwalker\n{B}{B}\nCreature — Dauthi Rogue\n\nShadow (This creature can block or be blocked by only creatures with shadow.)\n\nIf a card would be put into an opponent's graveyard from anywhere, instead exile it with a void counter on it.\n\n{T}, Sacrifice this creature: Choose an exiled card an opponent owns with a void counter on it. You may play it this turn without paying its mana cost.\n\n3/2"
+Output:
+card "Dauthi Voidwalker" {
+    type: Creature
+    cost: {B}{B}
+    subtype: Dauthi Rogue
+    p/t: 3 / 2
+    keywords: shadow
+    activate({0}, sacrifice(creature)): exile(target(permanent, opponent))
+    rules: "Shadow. If a card would be put into an opponent's graveyard from anywhere, instead exile it with a void counter on it. {T}, Sacrifice this creature: Choose an exiled card an opponent owns with a void counter on it. You may play it this turn without paying its mana cost."
+}
+
+Input: "Counterspell\n{U}{U}\nInstant\n\nCounter target spell."
+Output:
+card "Counterspell" {
+    type: Instant
+    cost: {U}{U}
+    effect: counter(target(spell))
+    rules: "Counter target spell."
+}
 """
 
 
@@ -929,6 +992,19 @@ def parse_card_text(
                 continue
         rules_lines.append(line)
 
+    # --- Check for trailing P/T (common in web-pasted card text) ---
+    # Cards pasted from the web often have P/T as the very last line,
+    # after all the rules text.
+    if rules_lines and pt_line is None:
+        trailing_pt = _PT_RE.match(rules_lines[-1])
+        if trailing_pt:
+            pt_line = rules_lines.pop()
+
+    # --- Check for trailing loyalty (planeswalker pasted from web) ---
+    if rules_lines and loyalty is None and card_type_line and 'planeswalker' in card_type_line.lower():
+        if _re_module.match(r'^\d+$', rules_lines[-1]):
+            loyalty = int(rules_lines.pop())
+
     rules_text = " ".join(rules_lines).strip()
 
     # --- Parse type line ---
@@ -961,6 +1037,10 @@ def parse_card_text(
             toughness = int(t) if t != '*' else 0
 
     # --- Parse rules text with LLM ---
+    # Send the full original card text so the LLM gets full context
+    # (it's trained on web-pasted card examples). The algorithmic metadata
+    # extraction above is still used for structured fields like name/cost/p-t,
+    # but the LLM sees everything for better rules understanding.
     parsed_rules = {"effects": [], "keywords": set(),
                     "triggered_abilities": [], "activated_abilities": []}
     source = "none"
@@ -968,7 +1048,7 @@ def parse_card_text(
 
     if rules_text:
         parsed_rules = translate_rules_text_llm(
-            rules_text, model=model,
+            card_text.strip(), model=model,
             ollama_base_url=ollama_base_url, timeout=timeout,
         )
         source = parsed_rules.pop("_source", "llm")
